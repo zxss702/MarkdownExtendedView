@@ -64,6 +64,7 @@ struct MarkdownRenderer: View {
                 SwiftUI.Text(htmlBlock.rawHTML)
                     .font(theme.codeFont)
                     .foregroundColor(theme.secondaryTextColor)
+                    .selectionTextPassThrough()
             )
         } else {
             return AnyView(EmptyView())
@@ -133,10 +134,12 @@ struct MarkdownRenderer: View {
                     .foregroundColor(theme.textColor)
             }
         }
+        .allowsHitTesting(false)
         .padding(theme.codeBlockPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.codeBackgroundColor)
-        .cornerRadius(8)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .selectionTextPassThrough()
     }
 
     // MARK: - Block Quote
@@ -199,6 +202,7 @@ struct MarkdownRenderer: View {
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textColor)
                 .frame(width: 20, alignment: .trailing)
+                .selectionTextPassThrough()
 
             VStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
@@ -275,7 +279,7 @@ struct MarkdownRenderer: View {
                     .foregroundColor(theme.textColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
-                    .background(isHeader ? theme.tableHeaderBackgroundColor : Color.clear)
+                    .background { if isHeader { theme.tableHeaderBackgroundColor.allowsHitTesting(false) } }
 
                 if index < cells.count - 1 {
                     Divider()
@@ -297,7 +301,7 @@ struct MarkdownRenderer: View {
     }
 
     /// Builds a Text view from inline children, handling LaTeX segments and links.
-    private func buildInlineText(from parent: any Markup) -> some View {
+    private func buildInlineText(from parent: any Markup) -> AnyView {
         let plainText = extractPlainText(from: parent)
 
         // Check if text contains LaTeX
@@ -315,7 +319,7 @@ struct MarkdownRenderer: View {
             return AnyView(renderTextWithImages(parent))
         }
 
-        return AnyView(buildAttributedText(from: parent))
+        return AnyView(buildAttributedText(from: parent).selectionTextPassThrough())
     }
 
     /// Whether image loading is enabled.
@@ -369,6 +373,7 @@ struct MarkdownRenderer: View {
             SwiftUI.Text(text.string)
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textColor)
+                .selectionTextPassThrough()
 
         case let strong as Strong:
             renderStrongAsView(strong)
@@ -388,16 +393,19 @@ struct MarkdownRenderer: View {
             SwiftUI.Text(code.code)
                 .font(theme.codeFont)
                 .foregroundColor(theme.textColor)
+                .selectionTextPassThrough()
 
         case _ as SoftBreak:
             SwiftUI.Text(" ")
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textColor)
+                .selectionTextPassThrough()
 
         case _ as LineBreak:
             SwiftUI.Text("\n")
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textColor)
+                .selectionTextPassThrough()
 
         case let image as Markdown.Image:
             MarkdownImageView(
@@ -411,6 +419,7 @@ struct MarkdownRenderer: View {
                 SwiftUI.Text(plainText.plainText)
                     .font(theme.bodyFont)
                     .foregroundColor(theme.textColor)
+                    .selectionTextPassThrough()
             }
         }
     }
@@ -423,6 +432,7 @@ struct MarkdownRenderer: View {
             .bold()
             .font(theme.bodyFont)
             .foregroundColor(theme.textColor)
+            .selectionTextPassThrough()
     }
 
     /// Helper for rendering Emphasis in flow layout (simplified to avoid type inference issues).
@@ -433,6 +443,7 @@ struct MarkdownRenderer: View {
             .italic()
             .font(theme.bodyFont)
             .foregroundColor(theme.textColor)
+            .selectionTextPassThrough()
     }
 
     /// Renders text that may contain inline LaTeX.
@@ -457,6 +468,7 @@ struct MarkdownRenderer: View {
             SwiftUI.Text(text)
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textColor)
+                .selectionTextPassThrough()
 
         case .latex(let latex, let isBlock):
             LaTeXView(latex: latex, isBlock: isBlock, theme: theme)
@@ -531,6 +543,20 @@ struct MarkdownRenderer: View {
             return plainText.plainText
         }
         return markup.children.map { extractPlainText(from: $0) }.joined()
+    }
+}
+
+private extension View {
+
+    func selectionTextPassThrough() -> some View {
+#if os(macOS)
+        self
+            .allowsHitTesting(false)
+            .pointerStyle(.horizontalText)
+#else
+        self
+            .allowsHitTesting(false)
+#endif
     }
 }
 
