@@ -34,12 +34,14 @@ struct HighlightedCodeView: View {
         if tokens.isEmpty {
             Text(" ")
                 .font(theme.codeBlockFont)
+                .codeSelectionTextPassThrough()
         } else {
             tokens.reduce(SwiftUI.Text("")) { result, token in
                 result + SwiftUI.Text(token.text)
                     .foregroundColor(color(for: token.type))
             }
             .font(theme.codeBlockFont)
+            .codeSelectionTextPassThrough()
         }
     }
 
@@ -79,5 +81,19 @@ struct HighlightedCodeView: View {
         }
 
         return lines
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func codeSelectionTextPassThrough() -> some View {
+#if os(macOS)
+        self
+            .allowsHitTesting(false)
+            .pointerStyle(.horizontalText)
+#else
+        self
+            .allowsHitTesting(false)
+#endif
     }
 }

@@ -16,7 +16,7 @@ struct TappableLinkView: View {
 
     let link: Markdown.Link
     let theme: MarkdownTheme
-    let linkHandler: ((URL) -> Void)?
+    let linkHandler: (@Sendable (URL) -> Void)?
     let baseURL: URL?
     var textTransform: ((SwiftUI.Text) -> SwiftUI.Text)?
 
