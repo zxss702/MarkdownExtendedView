@@ -78,6 +78,16 @@ public struct MarkdownFeatures: OptionSet, Sendable {
     /// section at the end of the document.
     public static let footnotes = MarkdownFeatures(rawValue: 1 << 4)
 
+    /// Enable large-area text selection across block boundaries.
+    ///
+    /// When enabled, ``MarkdownView`` switches to a dual-layer rendering strategy:
+    /// - On iOS 18+ and macOS 15+, a layout-driven native interaction overlay provides
+    ///   accurate cross-paragraph selection geometry
+    /// - The regular rich renderer remains visible on top for visual fidelity
+    ///
+    /// This mode prioritizes text selection interactions over inline gestures.
+    public static let textSelection = MarkdownFeatures(rawValue: 1 << 5)
+
     // MARK: - Convenience
 
     /// No features enabled (default).
@@ -87,8 +97,9 @@ public struct MarkdownFeatures: OptionSet, Sendable {
 
     /// All features enabled.
     ///
-    /// Enables links, images, mermaid diagrams, syntax highlighting, and footnotes.
-    public static let all: MarkdownFeatures = [.links, .images, .mermaid, .syntaxHighlighting, .footnotes]
+    /// Enables links, images, mermaid diagrams, syntax highlighting, footnotes,
+    /// and large-area text selection.
+    public static let all: MarkdownFeatures = [.links, .images, .mermaid, .syntaxHighlighting, .footnotes, .textSelection]
 }
 
 // MARK: - Environment Keys
@@ -100,7 +111,7 @@ private struct MarkdownFeaturesKey: EnvironmentKey {
 
 /// Environment key for custom link tap handler.
 private struct MarkdownLinkHandlerKey: EnvironmentKey {
-    static let defaultValue: ((URL) -> Void)? = nil
+    static let defaultValue: (@Sendable (URL) -> Void)? = nil
 }
 
 public extension EnvironmentValues {
@@ -132,7 +143,7 @@ public extension EnvironmentValues {
     ///         // Custom handling
     ///     }
     /// ```
-    var markdownLinkHandler: ((URL) -> Void)? {
+    var markdownLinkHandler: (@Sendable (URL) -> Void)? {
         get { self[MarkdownLinkHandlerKey.self] }
         set { self[MarkdownLinkHandlerKey.self] = newValue }
     }
@@ -179,7 +190,7 @@ public extension View {
     ///
     /// - Parameter handler: A closure that receives the tapped URL.
     /// - Returns: A view with the custom link handler set.
-    func onLinkTap(_ handler: @escaping (URL) -> Void) -> some View {
+    func onLinkTap(_ handler: @escaping @Sendable (URL) -> Void) -> some View {
         environment(\.markdownLinkHandler, handler)
     }
 }

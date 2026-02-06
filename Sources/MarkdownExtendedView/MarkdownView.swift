@@ -19,6 +19,7 @@ import Markdown
 /// - Links and images
 /// - Tables
 /// - Inline LaTeX ($...$) and display LaTeX ($$...$$)
+/// - Optional large-area text selection across block boundaries
 ///
 /// ## Example Usage
 ///
@@ -74,11 +75,23 @@ public struct MarkdownView: View {
     // MARK: - Body
 
     public var body: some View {
-        MarkdownRenderer(
-            document: parseMarkdown(content),
-            theme: theme,
-            baseURL: baseURL
-        )
+        let document = parseMarkdown(content)
+
+        Group {
+            if features.contains(.textSelection) {
+                SelectableMarkdownRenderer(
+                    document: document,
+                    theme: theme,
+                    baseURL: baseURL
+                )
+            } else {
+                MarkdownRenderer(
+                    document: document,
+                    theme: theme,
+                    baseURL: baseURL
+                )
+            }
+        }
     }
 
     // MARK: - Parsing
