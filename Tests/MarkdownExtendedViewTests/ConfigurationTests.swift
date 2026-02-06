@@ -8,6 +8,7 @@ import XCTest
 import SwiftUI
 @testable import MarkdownExtendedView
 
+@MainActor
 final class ConfigurationTests: XCTestCase {
 
     // MARK: - Environment Default Values

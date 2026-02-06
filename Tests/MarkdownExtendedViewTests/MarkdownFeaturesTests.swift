@@ -32,6 +32,13 @@ final class MarkdownFeaturesTests: XCTestCase {
         XCTAssertTrue(features.contains(.mermaid))
     }
 
+    func testTextSelectionFlag() {
+        let features: MarkdownFeatures = .textSelection
+        XCTAssertFalse(features.contains(.links))
+        XCTAssertFalse(features.contains(.images))
+        XCTAssertTrue(features.contains(.textSelection))
+    }
+
     // MARK: - Combined Flags
 
     func testCombinedFlags() {
@@ -73,6 +80,7 @@ final class MarkdownFeaturesTests: XCTestCase {
         XCTAssertTrue(features.contains(.links))
         XCTAssertTrue(features.contains(.images))
         XCTAssertTrue(features.contains(.mermaid))
+        XCTAssertTrue(features.contains(.textSelection))
     }
 
     // MARK: - Equality

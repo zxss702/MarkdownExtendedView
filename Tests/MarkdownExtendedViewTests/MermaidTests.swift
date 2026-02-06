@@ -212,7 +212,7 @@ final class MermaidTests: XCTestCase {
     func testStateDiagram() {
         let markdown = """
         ```mermaid
-        stateDiagram-v2
+        stateDiagram
             [*] --> Still
             Still --> [*]
             Still --> Moving
