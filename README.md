@@ -6,8 +6,8 @@
 [![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FChrisGVE%2FMarkdownExtendedView%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/ChrisGVE/MarkdownExtendedView)
 [![Swift Package Index](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FChrisGVE%2FMarkdownExtendedView%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/ChrisGVE/MarkdownExtendedView)
 [![Documentation](https://img.shields.io/badge/Documentation-DocC-blue.svg?style=flat&logo=readthedocs&logoColor=white)](https://swiftpackageindex.com/ChrisGVE/MarkdownExtendedView/documentation)
-[![iOS 16+](https://img.shields.io/badge/iOS-16%2B-blue.svg?style=flat)](https://developer.apple.com/ios/)
-[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue.svg?style=flat)](https://developer.apple.com/macos/)
+[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-blue.svg?style=flat)](https://developer.apple.com/ios/)
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue.svg?style=flat)](https://developer.apple.com/macos/)
 
 A native SwiftUI Markdown renderer with LaTeX equation support.
 
@@ -22,9 +22,10 @@ A native SwiftUI Markdown renderer with LaTeX equation support.
 - **Remote image loading** using AsyncImage
 - **Syntax highlighting** for 13+ languages
 - **Mermaid diagrams** via embedded WKWebView
+- **Large-area text selection** across paragraphs (opt-in)
 - **Theming system** with built-in themes (default, gitHub, compact)
 - **Privacy-first** - network features disabled by default
-- **Cross-platform** support for iOS 16+ and macOS 13+
+- **Cross-platform** support for iOS 18+ and macOS 15+
 - **Pure SwiftUI** - minimal WebView usage (only for Mermaid)
 
 ## Supported Markdown Elements
@@ -151,7 +152,7 @@ MarkdownView(content)
 
 // Enable multiple features
 MarkdownView(content)
-    .markdownFeatures([.links, .images, .syntaxHighlighting])
+    .markdownFeatures([.links, .images, .syntaxHighlighting, .textSelection])
 
 // Enable all features
 MarkdownView(content)
@@ -167,6 +168,7 @@ MarkdownView(content)
 | `.syntaxHighlighting` | Colorizes code blocks based on language | No |
 | `.mermaid` | Renders Mermaid diagrams using WKWebView | Yes (CDN) |
 | `.footnotes` | Processes footnote syntax (`[^1]`) and renders as superscripts | No |
+| `.textSelection` | Enables native large-area selection and copy across block boundaries | No |
 
 ### Custom Link Handler
 
@@ -180,6 +182,21 @@ MarkdownView(content)
         print("Tapped: \(url)")
     }
 ```
+
+### Large-Area Text Selection
+
+Enable cross-paragraph selection and copy with `.textSelection`:
+
+```swift
+MarkdownView(content)
+    .markdownFeatures(.textSelection)
+```
+
+Selection mode is optimized for long-form reading and copying. In this mode,
+text selection interactions take priority over inline tap gestures.
+
+On iOS 18+ and macOS 15+, selection uses a layout-driven native overlay for
+improved cross-block alignment.
 
 ### Syntax Highlighting
 
@@ -295,9 +312,9 @@ Current limitations that may be addressed in future versions:
 
 ## Requirements
 
-- iOS 16.0+ / macOS 13.0+
-- Swift 5.9+
-- Xcode 15.0+
+- iOS 18.0+ / macOS 15.0+
+- Swift 6.0+
+- Xcode 16.0+
 
 ## Dependencies
 
