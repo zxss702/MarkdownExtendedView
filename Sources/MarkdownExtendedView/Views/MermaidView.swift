@@ -1,7 +1,7 @@
 // MermaidView.swift
-// MarkdownExtendedView
+//  MarkdownExtendedView
 //
-// Copyright (c) 2025 Christian C. Berclaz
+//  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
 
 import SwiftUI
