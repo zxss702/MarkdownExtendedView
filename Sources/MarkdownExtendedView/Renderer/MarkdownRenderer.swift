@@ -23,6 +23,7 @@ struct MarkdownRenderer: View {
                 renderBlock(child)
             }
         }
+        .lineSpacing(theme.paragraphSpacing)
     }
 
     /// Whether clickable links are enabled.
