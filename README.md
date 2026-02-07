@@ -9,51 +9,51 @@
 [![iOS 18+](https://img.shields.io/badge/iOS-18%2B-blue.svg?style=flat)](https://developer.apple.com/ios/)
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue.svg?style=flat)](https://developer.apple.com/macos/)
 
-A native SwiftUI Markdown renderer with LaTeX equation support.
+一个原生 SwiftUI Markdown 渲染器，支持 LaTeX 数学公式。
 
-## Features
+## 特性
 
-- **GitHub Flavored Markdown** parsing via Apple's swift-markdown
-- **LaTeX equations** rendered natively via SwiftMath
-  - Inline math: `$...$`
-  - Display math: `$$...$$`
-- **Task lists** with checkbox rendering (`- [ ]` and `- [x]`)
-- **Clickable links** with in-app browser (iOS) or system browser (macOS)
-- **Remote image loading** using AsyncImage
-- **Syntax highlighting** for 13+ languages
-- **Mermaid diagrams** via embedded WKWebView
-- **Large-area text selection** across paragraphs (opt-in)
-- **Theming system** with built-in themes (default, gitHub, compact)
-- **Privacy-first** - network features disabled by default
-- **Cross-platform** support for iOS 18+ and macOS 15+
-- **Pure SwiftUI** - minimal WebView usage (only for Mermaid)
+- 通过 Apple 的 swift-markdown 实现 **GitHub Flavored Markdown** 解析
+- 通过 SwiftMath 原生渲染 **LaTeX 数学公式**
+  - 行内公式：`$...$`
+  - 块级公式：`$$...$$`
+- **任务列表**支持复选框渲染（`- [ ]` 和 `- [x]`）
+- **可点击的链接**，支持应用内浏览器（iOS）或系统浏览器（macOS）
+- 使用 AsyncImage 进行**远程图片加载**
+- 支持 **13+ 种编程语言的语法高亮**
+- 通过内嵌 WKWebView 支持 **Mermaid 图表**
+- **大范围文本选择**，支持跨段落选择（需手动开启）
+- **主题系统**，内置主题（default、gitHub、compact）
+- **隐私优先** - 网络功能默认禁用
+- **跨平台**支持 iOS 18+ 和 macOS 15+
+- **纯 SwiftUI** - WebView 使用最小化（仅 Mermaid 使用）
 
-## Supported Markdown Elements
+## 支持的 Markdown 元素
 
-| Element | Syntax | Status |
+| 元素 | 语法 | 状态 |
 |---------|--------|--------|
-| Headings | `# H1` through `###### H6` | Supported |
-| Bold | `**text**` or `__text__` | Supported |
-| Italic | `*text*` or `_text_` | Supported |
-| Strikethrough | `~~text~~` | Supported |
-| Inline code | `` `code` `` | Supported |
-| Code blocks | ` ``` ` fenced blocks | Supported (with syntax highlighting) |
-| Block quotes | `> quote` | Supported |
-| Ordered lists | `1. item` | Supported (with nesting) |
-| Unordered lists | `- item` or `* item` | Supported (with nesting) |
-| Task lists | `- [ ]` and `- [x]` | Supported |
-| Tables | GFM pipe tables | Supported |
-| Links | `[text](url)` | Opt-in (.links feature) |
-| Images | `![alt](url)` | Opt-in (.images feature) |
-| Mermaid diagrams | ` ```mermaid ` | Opt-in (.mermaid feature) |
-| Footnotes | `[^1]` and `[^1]: text` | Opt-in (.footnotes feature) |
-| Thematic breaks | `---` or `***` | Supported |
-| Inline LaTeX | `$E=mc^2$` | Supported |
-| Display LaTeX | `$$...$$` | Supported |
+| 标题 | `# H1` 至 `###### H6` | 已支持 |
+| 粗体 | `**text**` 或 `__text__` | 已支持 |
+| 斜体 | `*text*` 或 `_text_` | 已支持 |
+| 删除线 | `~~text~~` | 已支持 |
+| 行内代码 | `` `code` `` | 已支持 |
+| 代码块 | ` ``` ` 围栏代码块 | 已支持（含语法高亮） |
+| 引用块 | `> quote` | 已支持 |
+| 有序列表 | `1. item` | 已支持（含嵌套） |
+| 无序列表 | `- item` 或 `* item` | 已支持（含嵌套） |
+| 任务列表 | `- [ ]` 和 `- [x]` | 已支持 |
+| 表格 | GFM 管道表格 | 已支持 |
+| 链接 | `[text](url)` | 需手动开启（.links 特性） |
+| 图片 | `![alt](url)` | 需手动开启（.images 特性） |
+| Mermaid 图表 | ` ```mermaid ` | 需手动开启（.mermaid 特性） |
+| 脚注 | `[^1]` 和 `[^1]: text` | 需手动开启（.footnotes 特性） |
+| 分隔线 | `---` 或 `***` | 已支持 |
+| 行内 LaTeX | `$E=mc^2$` | 已支持 |
+| 块级 LaTeX | `$$...$$` | 已支持 |
 
-## Installation
+## 安装
 
-Add to your `Package.swift`:
+添加到你的 `Package.swift`：
 
 ```swift
 dependencies: [
@@ -61,7 +61,7 @@ dependencies: [
 ]
 ```
 
-Then add the dependency to your target:
+然后将依赖项添加到你的目标：
 
 ```swift
 .target(
@@ -70,9 +70,9 @@ Then add the dependency to your target:
 )
 ```
 
-Or in Xcode: File > Add Package Dependencies and enter the repository URL.
+或在 Xcode 中：文件 > 添加包依赖，然后输入仓库 URL。
 
-## Usage
+## 使用
 
 ```swift
 import SwiftUI
@@ -97,32 +97,32 @@ struct ContentView: View {
 }
 ```
 
-### Theming
+### 主题
 
 ```swift
 MarkdownView(content)
     .markdownTheme(.gitHub)
 ```
 
-Available themes:
-- `.default` - Clean, readable defaults that adapt to system appearance
-- `.gitHub` - GitHub-style rendering with specific font sizes
-- `.compact` - Reduced spacing for dense content
+可用主题：
+- `.default` - 简洁、易读的默认样式，自动适配系统外观
+- `.gitHub` - 类 GitHub 渲染风格，使用特定字体大小
+- `.compact` - 紧凑间距，适合密集内容展示
 
-### Custom Theme
+### 自定义主题
 
-Create a custom theme by modifying any of the available properties:
+通过修改可用属性来创建自定义主题：
 
 ```swift
 var customTheme = MarkdownTheme.default
 
-// Typography
+// 字体
 customTheme.bodyFont = .system(size: 15)
 customTheme.heading1Font = .system(size: 28, weight: .bold)
 customTheme.codeFont = .system(.body, design: .monospaced)
 customTheme.codeBlockFont = .system(.callout, design: .monospaced)
 
-// Colors
+// 颜色
 customTheme.textColor = .primary
 customTheme.secondaryTextColor = .secondary
 customTheme.linkColor = .blue
@@ -131,7 +131,7 @@ customTheme.blockQuoteBorderColor = Color(white: 0.75)
 customTheme.tableBorderColor = Color(white: 0.80)
 customTheme.tableHeaderBackgroundColor = Color(white: 0.90)
 
-// Spacing
+// 间距
 customTheme.paragraphSpacing = 12
 customTheme.listItemSpacing = 4
 customTheme.indentation = 20
@@ -141,66 +141,64 @@ MarkdownView(content)
     .markdownTheme(customTheme)
 ```
 
-## Feature Flags
+## 特性开关
 
-For privacy, network-dependent features are disabled by default. Enable them using the `.markdownFeatures()` modifier:
+出于隐私考虑，依赖网络的功能默认禁用。使用 `.markdownFeatures()` 修饰符启用：
 
 ```swift
-// Enable clickable links
+// 启用可点击链接
 MarkdownView(content)
     .markdownFeatures(.links)
 
-// Enable multiple features
+// 启用多个特性
 MarkdownView(content)
     .markdownFeatures([.links, .images, .syntaxHighlighting, .textSelection])
 
-// Enable all features
+// 启用所有特性
 MarkdownView(content)
     .markdownFeatures(.all)
 ```
 
-### Available Features
+### 可用特性
 
-| Feature | Description | Network Required |
+| 特性 | 描述 | 需要网络 |
 |---------|-------------|------------------|
-| `.links` | Makes links tappable. iOS opens in SFSafariViewController, macOS opens in default browser | Optional |
-| `.images` | Loads and displays remote images using AsyncImage | Yes |
-| `.syntaxHighlighting` | Colorizes code blocks based on language | No |
-| `.mermaid` | Renders Mermaid diagrams using WKWebView | Yes (CDN) |
-| `.footnotes` | Processes footnote syntax (`[^1]`) and renders as superscripts | No |
-| `.textSelection` | Enables native large-area selection and copy across block boundaries | No |
+| `.links` | 使链接可点击。iOS 在 SFSafariViewController 中打开，macOS 在默认浏览器中打开 | 可选 |
+| `.images` | 使用 AsyncImage 加载并显示远程图片 | 是 |
+| `.syntaxHighlighting` | 根据语言对代码块进行着色 | 否 |
+| `.mermaid` | 使用 WKWebView 渲染 Mermaid 图表 | 是（CDN） |
+| `.footnotes` | 处理脚注语法（`[^1]`）并以上标形式渲染 | 否 |
+| `.textSelection` | 启用原生大范围选择和跨块复制功能 | 否 |
 
-### Custom Link Handler
+### 自定义链接处理器
 
-Override the default link behavior:
+覆盖默认的链接行为：
 
 ```swift
 MarkdownView(content)
     .markdownFeatures(.links)
     .onLinkTap { url in
-        // Custom handling
+        // 自定义处理
         print("Tapped: \(url)")
     }
 ```
 
-### Large-Area Text Selection
+### 大范围文本选择
 
-Enable cross-paragraph selection and copy with `.textSelection`:
+使用 `.textSelection` 启用跨段落选择和复制：
 
 ```swift
 MarkdownView(content)
     .markdownFeatures(.textSelection)
 ```
 
-Selection mode is optimized for long-form reading and copying. In this mode,
-text selection interactions take priority over inline tap gestures.
+选择模式针对长文本阅读和复制进行了优化。在此模式下，文本选择交互优先于行内点击手势。
 
-On iOS 18+ and macOS 15+, selection uses a layout-driven native overlay for
-improved cross-block alignment.
+在 iOS 18+ 和 macOS 15+ 上，选择使用基于布局的原生覆盖层，以实现更好的跨块对齐。
 
-### Syntax Highlighting
+### 语法高亮
 
-When `.syntaxHighlighting` is enabled, code blocks with language specifiers are colorized:
+启用 `.syntaxHighlighting` 后，带语言标识符的代码块将被着色：
 
 ```swift
 MarkdownView("""
@@ -212,9 +210,9 @@ MarkdownView("""
 .markdownFeatures(.syntaxHighlighting)
 ```
 
-Supported languages: Swift, Python, JavaScript, TypeScript, Java, C, C++, Go, Rust, Ruby, Kotlin, PHP, C#.
+支持的语言：Swift、Python、JavaScript、TypeScript、Java、C、C++、Go、Rust、Ruby、Kotlin、PHP、C#。
 
-Customize syntax colors via the theme:
+通过主题自定义语法颜色：
 
 ```swift
 var theme = MarkdownTheme.default
@@ -223,9 +221,9 @@ theme.syntaxColors.string = .red
 theme.syntaxColors.comment = .gray
 ```
 
-### Mermaid Diagrams
+### Mermaid 图表
 
-When `.mermaid` is enabled, Mermaid code blocks are rendered as diagrams:
+启用 `.mermaid` 后，Mermaid 代码块将渲染为图表：
 
 ```swift
 MarkdownView("""
@@ -239,11 +237,11 @@ MarkdownView("""
 .markdownFeatures(.mermaid)
 ```
 
-Supports all Mermaid diagram types: flowcharts, sequence diagrams, class diagrams, state diagrams, Gantt charts, pie charts, and more.
+支持所有 Mermaid 图表类型：流程图、序列图、类图、状态图、甘特图、饼图等。
 
-### Footnotes
+### 脚注
 
-When `.footnotes` is enabled, footnote syntax is processed and rendered:
+启用 `.footnotes` 后，脚注语法将被处理并渲染：
 
 ```swift
 MarkdownView("""
@@ -257,26 +255,26 @@ MarkdownView("""
 .markdownFeatures(.footnotes)
 ```
 
-Footnotes are:
-- Rendered as superscript numbers (¹, ², ³...)
-- Collected and displayed in a footnotes section at the end
-- Numbered in order of first appearance in the text
+脚注特点：
+- 以上标数字形式渲染（¹、²、³...）
+- 收集并显示在脚注区域末尾
+- 按在文本中首次出现的顺序编号
 
-## LaTeX Support
+## LaTeX 支持
 
-MarkdownExtendedView uses [ExtendedSwiftMath](https://github.com/ChrisGVE/ExtendedSwiftMath) for native LaTeX rendering (a fork of SwiftMath with extended symbol coverage).
+MarkdownExtendedView 使用 [ExtendedSwiftMath](https://github.com/ChrisGVE/ExtendedSwiftMath) 进行原生 LaTeX 渲染（SwiftMath 的分支，扩展了符号覆盖范围）。
 
-### Inline Math
+### 行内公式
 
-Use single dollar signs for inline equations that flow with text:
+使用单美元符号表示与文本混排的行内公式：
 
 ```markdown
 The famous equation $E = mc^2$ changed physics.
 ```
 
-### Display Math
+### 块级公式
 
-Use double dollar signs for centered, block-level equations:
+使用双美元符号表示居中、块级公式：
 
 ```markdown
 The quadratic formula:
@@ -284,53 +282,53 @@ The quadratic formula:
 $$x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$$
 ```
 
-### Supported LaTeX Commands
+### 支持的 LaTeX 命令
 
-SwiftMath supports a wide range of LaTeX math commands including:
+SwiftMath 支持广泛的 LaTeX 数学命令，包括：
 
-- **Greek letters**: `\alpha`, `\beta`, `\gamma`, `\pi`, `\theta`, etc.
-- **Operators**: `\sum`, `\prod`, `\int`, `\lim`, `\log`, `\sin`, `\cos`, etc.
-- **Fractions**: `\frac{a}{b}`
-- **Roots**: `\sqrt{x}`, `\sqrt[n]{x}`
-- **Superscripts/subscripts**: `x^2`, `x_i`, `x_i^2`
-- **Brackets**: `\left(`, `\right)`, `\{`, `\}`, `\langle`, `\rangle`
-- **Matrices**: `\begin{matrix}...\end{matrix}`, `\begin{pmatrix}...\end{pmatrix}`
-- **Accents**: `\hat{x}`, `\bar{x}`, `\vec{x}`, `\dot{x}`
-- **Symbols**: `\infty`, `\partial`, `\nabla`, `\forall`, `\exists`
+- **希腊字母**：`\alpha`, `\beta`, `\gamma`, `\pi`, `\theta` 等
+- **运算符**：`\sum`, `\prod`, `\int`, `\lim`, `\log`, `\sin`, `\cos` 等
+- **分数**：`\frac{a}{b}`
+- **根号**：`\sqrt{x}`, `\sqrt[n]{x}`
+- **上标/下标**：`x^2`, `x_i`, `x_i^2`
+- **括号**：`\left(`, `\right)`, `\{`, `\}`, `\langle`, `\rangle`
+- **矩阵**：`\begin{matrix}...\end{matrix}`, `\begin{pmatrix}...\end{pmatrix}`
+- **重音符号**：`\hat{x}`, `\bar{x}`, `\vec{x}`, `\dot{x}`
+- **符号**：`\infty`, `\partial`, `\nabla`, `\forall`, `\exists`
 
-For a complete reference, see the [SwiftMath documentation](https://github.com/mgriebling/SwiftMath).
+完整参考请参见 [SwiftMath 文档](https://github.com/mgriebling/SwiftMath)。
 
-## Known Limitations
+## 已知限制
 
-Current limitations that may be addressed in future versions:
+当前版本中可能在未来版本解决的限制：
 
-| Feature | Status | Notes |
+| 特性 | 状态 | 说明 |
 |---------|--------|-------|
-| Reference-style links | Not verified | `[text][ref]` syntax may not work |
-| HTML blocks | Partial | Raw HTML is not rendered |
-| Definition lists | Not supported | Not part of GFM |
+| 引用式链接 | 未验证 | `[text][ref]` 语法可能无法正常工作 |
+| HTML 块 | 部分支持 | 原始 HTML 不会被渲染 |
+| 定义列表 | 不支持 | 非 GFM 标准 |
 
-## Requirements
+## 系统要求
 
 - iOS 18.0+ / macOS 15.0+
 - Swift 6.0+
 - Xcode 16.0+
 
-## Dependencies
+## 依赖项
 
-- [swift-markdown](https://github.com/apple/swift-markdown) - Apple's Markdown parser (CommonMark + GFM)
-- [ExtendedSwiftMath](https://github.com/ChrisGVE/ExtendedSwiftMath) - Native LaTeX rendering (fork of SwiftMath)
+- [swift-markdown](https://github.com/apple/swift-markdown) - Apple 的 Markdown 解析器（CommonMark + GFM）
+- [ExtendedSwiftMath](https://github.com/ChrisGVE/ExtendedSwiftMath) - 原生 LaTeX 渲染（SwiftMath 的分支）
 
-## Contributing
+## 贡献
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+欢迎贡献！请随时提交问题和拉取请求。
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork 仓库
+2. 创建你的特性分支（`git checkout -b feature/amazing-feature`）
+3. 提交你的更改（`git commit -m 'Add amazing feature'`）
+4. 推送到分支（`git push origin feature/amazing-feature`）
+5. 打开一个拉取请求
 
-## License
+## 许可证
 
-MIT License - Copyright (c) 2025 Christian C. Berclaz. See [LICENSE](LICENSE) for details.
+MIT 许可证 - 版权所有 (c) 2025 Christian C. Berclaz。详情请参见 [LICENSE](LICENSE)。
