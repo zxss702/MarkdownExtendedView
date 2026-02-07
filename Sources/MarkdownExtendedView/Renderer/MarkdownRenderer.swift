@@ -18,7 +18,7 @@ struct MarkdownRenderer: View {
     @Environment(\.markdownLinkHandler) private var linkHandler
 
     var body: some View {
-        LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+        VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
             ForEach(Array(document.children.enumerated()), id: \.offset) { _, child in
                 renderBlock(child)
             }
