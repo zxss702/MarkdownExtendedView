@@ -1,7 +1,7 @@
 // Theme.swift
-// MarkdownExtendedView
+//  MarkdownExtendedView
 //
-// Copyright (c) 2025 Christian C. Berclaz
+//  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
 
 import SwiftUI
@@ -139,6 +139,9 @@ public struct MarkdownTheme: Sendable {
     public var codeFont: Font
     /// Font for code blocks.
     public var codeBlockFont: Font
+    
+    public var latexInlineFontSize: CGFloat
+    public var latexBlockFontSize: CGFloat
 
     // MARK: - Colors
 
@@ -183,6 +186,8 @@ public struct MarkdownTheme: Sendable {
         heading6Font: Font = .subheadline.bold(),
         codeFont: Font = .system(.body, design: .monospaced),
         codeBlockFont: Font = .system(.callout, design: .monospaced),
+        latexInlineFontSize: CGFloat = 13,
+        latexBlockFontSize: CGFloat = 20,
         textColor: Color = .primary,
         secondaryTextColor: Color = .secondary,
         linkColor: Color = .accentColor,
@@ -205,6 +210,8 @@ public struct MarkdownTheme: Sendable {
         self.heading6Font = heading6Font
         self.codeFont = codeFont
         self.codeBlockFont = codeBlockFont
+        self.latexBlockFontSize = latexBlockFontSize
+        self.latexInlineFontSize = latexInlineFontSize
         self.textColor = textColor
         self.secondaryTextColor = secondaryTextColor
         self.linkColor = linkColor

@@ -1,7 +1,7 @@
 // LaTeXView.swift
-// MarkdownExtendedView
+//  MarkdownExtendedView
 //
-// Copyright (c) 2025 Christian C. Berclaz
+//  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
 
 import SwiftUI
@@ -34,7 +34,7 @@ struct LaTeXView: View {
     @ViewBuilder
     private var mathView: some View {
         MathView(latex: latex)
-            .font(fontSize: isBlock ? 20 : 16)
+            .font(fontSize: isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
             .foregroundColor(textColor)
     }
 
@@ -56,7 +56,7 @@ struct MathView {
 
     fileprivate var fontSize: CGFloat = 16
     fileprivate var textColor: MTColor = .black
-    fileprivate var textAlignment: MTTextAlignment = .left
+    fileprivate var textAlignment: MTTextAlignment = .right
 
     init(latex: String) {
         self.latex = latex
@@ -113,6 +113,7 @@ extension MathView: NSViewRepresentable {
         label.textAlignment = textAlignment
         label.labelMode = .display
         // Note: backgroundColor not accessible on macOS, view is transparent by default
+        
         return label
     }
 
