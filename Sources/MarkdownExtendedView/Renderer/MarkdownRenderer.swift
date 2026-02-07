@@ -198,11 +198,10 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderListItem(_ item: ListItem, bullet: String, depth: Int) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: 4) {
             Text(bullet)
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textColor)
-                .frame(width: 20, alignment: .trailing)
                 .selectionTextPassThrough()
 
             VStack(alignment: .leading, spacing: theme.listItemSpacing) {
@@ -250,18 +249,34 @@ struct MarkdownRenderer: View {
             // Header row
             if !cellArrays.header.isEmpty {
                 renderTableCellRow(cells: cellArrays.header, isHeader: true)
+
+                if !cellArrays.body.isEmpty {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.3))
+                        .frame(height: 1)
+                        .allowsHitTesting(false)
+                }
             }
 
             // Body rows
-            ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { _, rowCells in
-                renderTableCellRow(cells: rowCells, isHeader: false)
+            ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
+                renderTableCellRow(cells: rowCells, isHeader: false, rowIndex: rowIndex)
+
+                if rowIndex < cellArrays.body.count - 1 {
+                    Rectangle()
+                        .fill(.secondary.opacity(0.3))
+                        .frame(height: 1)
+                        .allowsHitTesting(false)
+                }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.secondary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(theme.tableBorderColor, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.secondary.opacity(0.3), lineWidth: 1)
         )
-        .cornerRadius(4)
     }
 
     /// Extracts cells from a table into arrays for easier SwiftUI rendering.
@@ -270,27 +285,28 @@ struct MarkdownRenderer: View {
         let body: [[Markdown.Table.Cell]] = table.body.rows.map { Array($0.cells) }
         return (header, body)
     }
-
+    
     @ViewBuilder
-    private func renderTableCellRow(cells: [Markdown.Table.Cell], isHeader: Bool) -> some View {
+    private func renderTableCellRow(cells: [Markdown.Table.Cell], isHeader: Bool, rowIndex: Int? = nil) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 renderInlineChildren(cell)
-                    .font(isHeader ? theme.bodyFont.bold() : theme.bodyFont)
+                    .font(isHeader ? theme.bodyFont.weight(.semibold) : theme.bodyFont)
                     .foregroundColor(theme.textColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background { if isHeader { theme.tableHeaderBackgroundColor.allowsHitTesting(false) } }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, isHeader ? 10 : 9)
 
                 if index < cells.count - 1 {
-                    Divider()
+                    
+                    Rectangle()
+                        .fill(.secondary.opacity(0.3))
+                        .frame(width: 1)
+                        .allowsHitTesting(false)
                 }
             }
         }
-        .overlay(
-            Rectangle()
-                .stroke(theme.tableBorderColor, lineWidth: 0.5)
-        )
+        .background(isHeader ? Color.secondary.opacity(0.2) : Color.clear)
     }
 
     // MARK: - Inline Rendering
