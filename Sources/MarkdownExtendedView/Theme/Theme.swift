@@ -142,6 +142,7 @@ public struct MarkdownTheme: Sendable {
     
     public var latexInlineFontSize: CGFloat
     public var latexBlockFontSize: CGFloat
+    public var mermaidFontSize: CGFloat
 
     // MARK: - Colors
 
@@ -155,11 +156,7 @@ public struct MarkdownTheme: Sendable {
     public var codeBackgroundColor: Color
     /// Block quote border color.
     public var blockQuoteBorderColor: Color
-    /// Table border color.
-    public var tableBorderColor: Color
-    /// Table header background color.
-    public var tableHeaderBackgroundColor: Color
-
+    
     /// Syntax highlighting colors for code blocks.
     public var syntaxColors: SyntaxColors
 
@@ -174,6 +171,8 @@ public struct MarkdownTheme: Sendable {
     /// Padding inside code blocks.
     public var codeBlockPadding: CGFloat
 
+    public var codeLineSpacing: CGFloat
+    
     public var textAlignment: HorizontalAlignment = .leading
     // MARK: - Initialization
 
@@ -189,18 +188,18 @@ public struct MarkdownTheme: Sendable {
         codeBlockFont: Font = .system(.callout, design: .monospaced),
         latexInlineFontSize: CGFloat = 13,
         latexBlockFontSize: CGFloat = 20,
+        mermaidFontSize: CGFloat = 13,
         textColor: Color = .primary,
         secondaryTextColor: Color = .secondary,
         linkColor: Color = .accentColor,
         codeBackgroundColor: Color = Color(white: 0.95),
         blockQuoteBorderColor: Color = Color(white: 0.75),
-        tableBorderColor: Color = Color(white: 0.80),
-        tableHeaderBackgroundColor: Color = Color(white: 0.90),
         syntaxColors: SyntaxColors = .default,
         paragraphSpacing: CGFloat = 12,
         listItemSpacing: CGFloat = 4,
         indentation: CGFloat = 20,
         codeBlockPadding: CGFloat = 12,
+        codeLineSpacing: CGFloat = 8,
         textAlignment: HorizontalAlignment = .leading
     ) {
         self.bodyFont = bodyFont
@@ -214,18 +213,18 @@ public struct MarkdownTheme: Sendable {
         self.codeBlockFont = codeBlockFont
         self.latexBlockFontSize = latexBlockFontSize
         self.latexInlineFontSize = latexInlineFontSize
+        self.mermaidFontSize = mermaidFontSize
         self.textColor = textColor
         self.secondaryTextColor = secondaryTextColor
         self.linkColor = linkColor
         self.codeBackgroundColor = codeBackgroundColor
         self.blockQuoteBorderColor = blockQuoteBorderColor
-        self.tableBorderColor = tableBorderColor
-        self.tableHeaderBackgroundColor = tableHeaderBackgroundColor
         self.syntaxColors = syntaxColors
         self.paragraphSpacing = paragraphSpacing
         self.listItemSpacing = listItemSpacing
         self.indentation = indentation
         self.codeBlockPadding = codeBlockPadding
+        self.codeLineSpacing = codeLineSpacing
         self.textAlignment = textAlignment
     }
 
