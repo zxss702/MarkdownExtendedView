@@ -14,15 +14,15 @@ import AppKit
 #if canImport(UIKit)
 import UIKit
 #endif
+import Observation
 
-@available(macOS 15.0, iOS 18.0, *)
 struct SelectableMarkdownRendererNative: View {
 
     let document: Document
     let theme: MarkdownTheme
     let baseURL: URL?
 
-    @StateObject private var model = SelectionModel()
+    @State private var model = SelectionModel()
 
     var body: some View {
         MarkdownRenderer(
@@ -65,9 +65,9 @@ struct SelectableMarkdownRendererNative: View {
 }
 
 #if canImport(AppKit)
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionInteractionOverlay: NSViewRepresentable {
-    @ObservedObject var model: SelectionModel
+    let model: SelectionModel
 
     func makeNSView(context: Context) -> SelectionInteractionView {
         SelectionInteractionView(model: model)
@@ -79,7 +79,7 @@ private struct SelectionInteractionOverlay: NSViewRepresentable {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class SelectionInteractionView: NSView {
     var model: SelectionModel
 
@@ -191,7 +191,7 @@ private final class SelectionInteractionView: NSView {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 extension SelectionInteractionView: NSUserInterfaceValidations {
     func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
@@ -207,9 +207,9 @@ extension SelectionInteractionView: NSUserInterfaceValidations {
 #endif
 
 #if canImport(UIKit)
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionInteractionOverlay: UIViewRepresentable {
-    @ObservedObject var model: SelectionModel
+    let model: SelectionModel
 
     func makeUIView(context: Context) -> SelectionInteractionView {
         SelectionInteractionView(model: model)
@@ -220,7 +220,7 @@ private struct SelectionInteractionOverlay: UIViewRepresentable {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class SelectionInteractionView: UIView {
     override var canBecomeFirstResponder: Bool { true }
 
@@ -278,14 +278,14 @@ private final class SelectionInteractionView: UIView {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 extension SelectionInteractionView: UITextInteractionDelegate {
     func interactionWillBegin(_ interaction: UITextInteraction) {
         _ = becomeFirstResponder()
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class SelectionTextPositionBox: UITextPosition {
     let wrappedValue: SelectionTextPosition
 
@@ -294,7 +294,7 @@ private final class SelectionTextPositionBox: UITextPosition {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class SelectionTextRangeBox: UITextRange {
     let wrappedValue: SelectionTextRange
 
@@ -325,7 +325,7 @@ private final class SelectionTextRangeBox: UITextRange {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class SelectionTextSelectionRectBox: UITextSelectionRect {
     let wrappedValue: SelectionRect
 
@@ -354,7 +354,7 @@ private final class SelectionTextSelectionRectBox: UITextSelectionRect {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 extension SelectionInteractionView: UITextInput {
     var hasText: Bool {
         model.hasText
@@ -498,9 +498,9 @@ extension SelectionInteractionView: UITextInput {
 }
 #endif
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionHighlightLayer: View {
-    @ObservedObject var model: SelectionModel
+    let model: SelectionModel
 
     #if canImport(AppKit)
     private let fillColor = Color(nsColor: .selectedTextBackgroundColor)//.opacity(0.45)
@@ -520,9 +520,9 @@ private struct SelectionHighlightLayer: View {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
-private final class SelectionModel: ObservableObject {
-    @Published var selectedRange: SelectionTextRange? {
+@Observable
+private final class SelectionModel {
+    var selectedRange: SelectionTextRange? {
         willSet {
             selectionWillChange?()
         }
@@ -532,18 +532,18 @@ private final class SelectionModel: ObservableObject {
         }
     }
 
-    @Published private(set) var selectionRects: [SelectionRect] = []
+    private(set) var selectionRects: [SelectionRect] = []
 
-    var selectionWillChange: (() -> Void)?
-    var selectionDidChange: (() -> Void)?
+    @ObservationIgnored var selectionWillChange: (() -> Void)?
+    @ObservationIgnored var selectionDidChange: (() -> Void)?
     
     var layoutCollection: any SelectionTextLayoutCollection = EmptySelectionLayoutCollection()
 
-    var hasText: Bool {
+    @ObservationIgnored var hasText: Bool {
         layoutCollection.stringLength > 0
     }
 
-    var hasNonCollapsedSelection: Bool {
+    @ObservationIgnored var hasNonCollapsedSelection: Bool {
         guard let selectedRange else { return false }
         return !selectedRange.isCollapsed
     }
@@ -655,7 +655,7 @@ private final class SelectionModel: ObservableObject {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionTextPosition: Hashable, Comparable {
     enum Affinity: Comparable {
         case downstream
@@ -673,7 +673,7 @@ private struct SelectionTextPosition: Hashable, Comparable {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionTextRange: Hashable {
     let start: SelectionTextPosition
     let end: SelectionTextPosition
@@ -701,7 +701,7 @@ private struct SelectionTextRange: Hashable {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionRect: Hashable {
     var rect: CGRect
 
@@ -722,7 +722,7 @@ private struct SelectionRect: Hashable {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionIndexPathSequence: Sequence, IteratorProtocol {
     private var current: IndexPath?
     private let end: IndexPath?
@@ -773,7 +773,7 @@ private struct SelectionIndexPathSequence: Sequence, IteratorProtocol {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private protocol SelectionTextLayoutCollection {
     var layouts: [any SelectionTextLayout] { get }
 
@@ -781,7 +781,7 @@ private protocol SelectionTextLayoutCollection {
     func needsPositionReconciliation(with other: any SelectionTextLayoutCollection) -> Bool
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct AnySelectionLayoutCollection: SelectionTextLayoutCollection, Equatable {
     private let base: any SelectionTextLayoutCollection
 
@@ -806,7 +806,7 @@ private struct AnySelectionLayoutCollection: SelectionTextLayoutCollection, Equa
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private protocol SelectionTextLayout {
     var attributedString: NSAttributedString { get }
     var origin: CGPoint { get }
@@ -814,27 +814,27 @@ private protocol SelectionTextLayout {
     var lines: [any SelectionTextLine] { get }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private protocol SelectionTextLine {
     var origin: CGPoint { get }
     var typographicBounds: CGRect { get }
     var runs: [any SelectionTextRun] { get }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private protocol SelectionTextRun {
     var layoutDirection: LayoutDirection { get }
     var typographicBounds: CGRect { get }
     var slices: [any SelectionTextRunSlice] { get }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private protocol SelectionTextRunSlice {
     var typographicBounds: CGRect { get }
     var characterRange: Range<Int> { get }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct EmptySelectionLayoutCollection: SelectionTextLayoutCollection {
     var layouts: [any SelectionTextLayout] { [] }
 
@@ -847,7 +847,7 @@ private struct EmptySelectionLayoutCollection: SelectionTextLayoutCollection {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class LiveSelectionLayoutCollection: SelectionTextLayoutCollection {
     private(set) lazy var layouts: [any SelectionTextLayout] = makeLayouts()
 
@@ -877,7 +877,7 @@ private final class LiveSelectionLayoutCollection: SelectionTextLayoutCollection
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class LiveSelectionTextLayout: SelectionTextLayout {
     var attributedString: NSAttributedString {
         joinedAttributedString.joined
@@ -918,7 +918,7 @@ private final class LiveSelectionTextLayout: SelectionTextLayout {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class LiveSelectionTextLine: SelectionTextLine {
     var origin: CGPoint {
         base.origin
@@ -957,7 +957,7 @@ private final class LiveSelectionTextLine: SelectionTextLine {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class LiveSelectionTextRun: SelectionTextRun {
     var layoutDirection: LayoutDirection {
         base.layoutDirection
@@ -987,7 +987,7 @@ private final class LiveSelectionTextRun: SelectionTextRun {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct EmptySelectionRun: SelectionTextRun {
     let layoutDirection: LayoutDirection = .leftToRight
     let typographicBounds: CGRect
@@ -998,7 +998,7 @@ private struct EmptySelectionRun: SelectionTextRun {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private final class LiveSelectionTextRunSlice: SelectionTextRunSlice {
     var typographicBounds: CGRect {
         base.typographicBounds.rect
@@ -1013,20 +1013,20 @@ private final class LiveSelectionTextRunSlice: SelectionTextRunSlice {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct EmptySelectionRunSlice: SelectionTextRunSlice {
     let typographicBounds: CGRect
     let characterRange: Range<Int>
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionLayoutContents {
     let lineFragments: [NSTextLineFragment]
     let layoutAttributedStrings: [NSAttributedString]
     let attributedStrings: [NSAttributedString]
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SwiftUI.Text.Layout {
     func materializeSelectionContents() -> SelectionLayoutContents {
         let lineFragments = compactMap(\.selectionLineFragment)
@@ -1042,7 +1042,7 @@ private extension SwiftUI.Text.Layout {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SwiftUI.Text.Layout.Line {
     var selectionLineFragment: NSTextLineFragment? {
         let mirror = Mirror(reflecting: self)
@@ -1053,7 +1053,7 @@ private extension SwiftUI.Text.Layout.Line {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SwiftUI.Text.Layout.Run {
     var selectionCharacterRanges: [Range<Int>] {
         guard let ctRun = selectionCTRun else { return [] }
@@ -1115,7 +1115,7 @@ private extension SwiftUI.Text.Layout.Run {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SelectionTextLayoutCollection {
     var startPosition: SelectionTextPosition {
         SelectionTextPosition(
@@ -1612,7 +1612,7 @@ private extension SelectionTextLayoutCollection {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private struct SelectionRectBuilder {
     let start: IndexPath?
     let end: IndexPath?
@@ -1684,7 +1684,7 @@ private struct SelectionRectBuilder {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension IndexPath {
     var layout: Int {
         self[0]
@@ -1719,14 +1719,14 @@ private extension IndexPath {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SelectionTextLayout {
     var frame: CGRect {
         bounds.offsetBy(dx: origin.x, dy: origin.y)
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SelectionTextLayout {
     func lineIndex(closestToY y: CGFloat) -> Int {
         var closestIndex = 0
@@ -1743,7 +1743,7 @@ private extension SelectionTextLayout {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SelectionTextLine {
     func runIndex(closestToX x: CGFloat) -> Int {
         var closestIndex = 0
@@ -1761,7 +1761,7 @@ private extension SelectionTextLine {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SelectionTextRun {
     func sliceIndex(closestToX x: CGFloat) -> Int {
         var closestIndex = 0
@@ -1779,7 +1779,7 @@ private extension SelectionTextRun {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension SelectionRect {
     mutating func trimSelectionLeading(to caretX: CGFloat) {
         if layoutDirection == .leftToRight {
@@ -1804,7 +1804,7 @@ private extension SelectionRect {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension Array where Element == [SelectionRect] {
     mutating func inflateSelectionLines() {
         var previousMaxY: CGFloat?
@@ -1830,7 +1830,7 @@ private extension Array where Element == [SelectionRect] {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension Array where Element == SelectionRect {
     func selectionIndex(containing caretX: CGFloat) -> Int? {
         firstIndex {
@@ -1839,7 +1839,7 @@ private extension Array where Element == SelectionRect {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension CGRect {
     func leadingEdgeX(for layoutDirection: LayoutDirection) -> CGFloat {
         layoutDirection == .leftToRight ? minX : maxX
@@ -1868,7 +1868,7 @@ private extension CGRect {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension Array where Element: AnyObject {
     func removingSelectionIdenticalDuplicates() -> Self {
         var identifiers: Set<ObjectIdentifier> = []
@@ -1886,7 +1886,7 @@ private extension Array where Element: AnyObject {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension Array where Element == NSAttributedString {
     func joinedForSelection() -> (joined: NSAttributedString, characterOffsets: [ObjectIdentifier: Int]) {
         guard !isEmpty else {
@@ -1913,7 +1913,7 @@ private extension Array where Element == NSAttributedString {
     }
 }
 
-@available(macOS 15.0, iOS 18.0, *)
+
 private extension Range where Bound == Int {
     func offsetBySelection(by value: Int) -> Range<Int> {
         (lowerBound + value)..<(upperBound + value)
