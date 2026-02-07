@@ -23,21 +23,13 @@ struct MarkdownImageView: View {
         if features.contains(.images), let url = resolvedURL {
             AsyncImage(url: url) { phase in
                 switch phase {
-                case .empty:
-                    ProgressView()
-                        .frame(maxWidth: .infinity, minHeight: 100)
-
                 case .success(let loadedImage):
                     loadedImage
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                         .accessibilityLabel(image.plainText)
-
-                case .failure:
-                    errorPlaceholder
-
-                @unknown default:
-                    errorPlaceholder
+                default: EmptyView()
                 }
             }
         } else {
@@ -50,23 +42,6 @@ struct MarkdownImageView: View {
         Text("[\(image.plainText)]")
             .font(theme.bodyFont)
             .foregroundColor(theme.secondaryTextColor)
-    }
-
-    /// Error placeholder when image fails to load.
-    private var errorPlaceholder: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "photo")
-                .font(.title2)
-                .foregroundColor(theme.secondaryTextColor)
-            if !image.plainText.isEmpty {
-                Text(image.plainText)
-                    .font(theme.bodyFont)
-                    .foregroundColor(theme.secondaryTextColor)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 60)
-        .background(theme.codeBackgroundColor.opacity(0.5))
-        .cornerRadius(8)
     }
 
     /// Resolves the image URL from the source string.
