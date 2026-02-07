@@ -108,7 +108,7 @@ public struct MarkdownView: View {
         // Pre-process content to handle LaTeX blocks before markdown parsing
         processedContent = LaTeXPreprocessor.process(processedContent)
 
-        return Document(parsing: processedContent, options: [.parseBlockDirectives, .parseSymbolLinks])
+        return Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
     }
 }
 
