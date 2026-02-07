@@ -30,7 +30,7 @@ struct SelectableMarkdownRendererNative: View {
             theme: theme,
             baseURL: baseURL
         )
-        .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
+        .overlayPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
             GeometryReader { geometry in
                 let collection = AnySelectionLayoutCollection(
                     LiveSelectionLayoutCollection(base: value, geometry: geometry)
@@ -47,14 +47,18 @@ struct SelectableMarkdownRendererNative: View {
             .allowsHitTesting(false)
         }
         .background {
-            SelectionInteractionOverlay(model: model)
-                .clipped()
+            if !(model.layoutCollection is EmptySelectionLayoutCollection) {
+                SelectionInteractionOverlay(model: model)
+                    .clipped()
+                    .transition(.identity)
+            }
         }
         .overlay {
             SelectionHighlightLayer(model: model)
                 .allowsHitTesting(false)
                 .blendMode(.multiply)
                 .clipped()
+                .transition(.identity)
         }
         .compositingGroup()
     }
@@ -532,8 +536,8 @@ private final class SelectionModel: ObservableObject {
 
     var selectionWillChange: (() -> Void)?
     var selectionDidChange: (() -> Void)?
-
-    private var layoutCollection: any SelectionTextLayoutCollection = EmptySelectionLayoutCollection()
+    
+    var layoutCollection: any SelectionTextLayoutCollection = EmptySelectionLayoutCollection()
 
     var hasText: Bool {
         layoutCollection.stringLength > 0
