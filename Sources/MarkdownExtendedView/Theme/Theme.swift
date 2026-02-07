@@ -174,6 +174,7 @@ public struct MarkdownTheme: Sendable {
     /// Padding inside code blocks.
     public var codeBlockPadding: CGFloat
 
+    public var textAlignment: HorizontalAlignment = .leading
     // MARK: - Initialization
 
     public init(
@@ -199,7 +200,8 @@ public struct MarkdownTheme: Sendable {
         paragraphSpacing: CGFloat = 12,
         listItemSpacing: CGFloat = 4,
         indentation: CGFloat = 20,
-        codeBlockPadding: CGFloat = 12
+        codeBlockPadding: CGFloat = 12,
+        textAlignment: HorizontalAlignment = .leading
     ) {
         self.bodyFont = bodyFont
         self.heading1Font = heading1Font
@@ -224,6 +226,7 @@ public struct MarkdownTheme: Sendable {
         self.listItemSpacing = listItemSpacing
         self.indentation = indentation
         self.codeBlockPadding = codeBlockPadding
+        self.textAlignment = textAlignment
     }
 
     /// Returns the font for the specified heading level.
