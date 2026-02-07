@@ -1,7 +1,7 @@
 // MarkdownRenderer.swift
-// MarkdownExtendedView
+//  MarkdownExtendedView
 //
-// Copyright (c) 2025 Christian C. Berclaz
+//  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
 
 import SwiftUI
@@ -546,7 +546,7 @@ struct MarkdownRenderer: View {
     }
 }
 
-private extension View {
+extension View {
 
     func selectionTextPassThrough() -> some View {
 #if os(macOS)
@@ -558,6 +558,17 @@ private extension View {
             .allowsHitTesting(false)
 #endif
     }
+    
+    func buttonLink() -> some View {
+#if os(macOS)
+        self
+            .buttonStyle(.borderless)
+            .contentShape(Rectangle())
+            .pointerStyle(.link)
+#else
+        self
+#endif
+    }
 }
 
 // MARK: - Flow Layout
@@ -565,6 +576,22 @@ private extension View {
 /// A simple flow layout for mixed text and views.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 0
+
+    private struct MeasuredSubview {
+        let size: CGSize
+        let baseline: CGFloat
+    }
+
+    private struct Line {
+        let indices: [Int]
+        let width: CGFloat
+        let maxAscent: CGFloat
+        let maxDescent: CGFloat
+
+        var height: CGFloat {
+            maxAscent + maxDescent
+        }
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let result = computeLayout(proposal: proposal, subviews: subviews)
@@ -583,33 +610,92 @@ struct FlowLayout: Layout {
     }
 
     private func computeLayout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-        let maxWidth = proposal.width ?? .infinity
-        var positions: [CGPoint] = []
-        var currentX: CGFloat = 0
-        var currentY: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        var totalHeight: CGFloat = 0
-        var totalWidth: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-
-            if currentX + size.width > maxWidth && currentX > 0 {
-                // Move to next line
-                currentX = 0
-                currentY += lineHeight + spacing
-                lineHeight = 0
-            }
-
-            positions.append(CGPoint(x: currentX, y: currentY))
-
-            currentX += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-            totalWidth = max(totalWidth, currentX)
+        guard !subviews.isEmpty else {
+            return (.zero, [])
         }
 
-        totalHeight = currentY + lineHeight
+        let maxWidth = proposal.width ?? .infinity
+        let measured = subviews.map { subview -> MeasuredSubview in
+            let size = subview.sizeThatFits(.unspecified)
+            let dimensions = subview.dimensions(in: .unspecified)
+            let baseline = resolvedBaseline(from: dimensions, size: size)
+            return MeasuredSubview(size: size, baseline: baseline)
+        }
 
+        let lines = computeLines(measured: measured, maxWidth: maxWidth)
+        var positions = Array(repeating: CGPoint.zero, count: subviews.count)
+        var currentY: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for line in lines {
+            var currentX: CGFloat = 0
+
+            for index in line.indices {
+                let item = measured[index]
+                let y = currentY + (line.maxAscent - item.baseline)
+                positions[index] = CGPoint(x: currentX, y: y)
+                currentX += item.size.width + spacing
+            }
+
+            totalWidth = max(totalWidth, line.width)
+            currentY += line.height + spacing
+        }
+
+        let totalHeight = max(0, currentY - spacing)
         return (CGSize(width: totalWidth, height: totalHeight), positions)
+    }
+
+    private func computeLines(measured: [MeasuredSubview], maxWidth: CGFloat) -> [Line] {
+        var lines: [Line] = []
+        var currentIndices: [Int] = []
+        var currentWidth: CGFloat = 0
+        var currentAscent: CGFloat = 0
+        var currentDescent: CGFloat = 0
+
+        func flushCurrentLine() {
+            guard !currentIndices.isEmpty else { return }
+            lines.append(
+                Line(
+                    indices: currentIndices,
+                    width: currentWidth,
+                    maxAscent: currentAscent,
+                    maxDescent: currentDescent
+                )
+            )
+            currentIndices.removeAll(keepingCapacity: true)
+            currentWidth = 0
+            currentAscent = 0
+            currentDescent = 0
+        }
+
+        for (index, item) in measured.enumerated() {
+            let candidateWidth = currentIndices.isEmpty ? item.size.width : currentWidth + spacing + item.size.width
+            if !currentIndices.isEmpty, candidateWidth > maxWidth {
+                flushCurrentLine()
+            }
+
+            currentIndices.append(index)
+            currentWidth = currentIndices.count == 1 ? item.size.width : currentWidth + spacing + item.size.width
+            currentAscent = max(currentAscent, item.baseline)
+            currentDescent = max(currentDescent, item.size.height - item.baseline)
+        }
+
+        flushCurrentLine()
+        return lines
+    }
+
+    private func resolvedBaseline(from dimensions: ViewDimensions, size: CGSize) -> CGFloat {
+        let first = dimensions[.lastTextBaseline]
+        if first.isFinite, first > 0, first <= size.height {
+            return first
+        }
+
+        let last = dimensions[.lastTextBaseline]
+        if last.isFinite, last > 0, last <= size.height {
+            return last
+        }
+
+        // For non-text views, use vertical center as a neutral fallback.
+        return size.height / 2
     }
 }

@@ -1,8 +1,8 @@
 #if os(macOS) || os(iOS)
 // SelectableMarkdownRendererNative.swift
-// MarkdownExtendedView
+//  MarkdownExtendedView
 //
-// Copyright (c) 2025 Christian C. Berclaz
+//  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
 
 import CoreText
@@ -25,36 +25,38 @@ struct SelectableMarkdownRendererNative: View {
     @StateObject private var model = SelectionModel()
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            SelectionInteractionOverlay(model: model)
+        MarkdownRenderer(
+            document: document,
+            theme: theme,
+            baseURL: baseURL
+        )
+        .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
+            GeometryReader { geometry in
+                let collection = AnySelectionLayoutCollection(
+                    LiveSelectionLayoutCollection(base: value, geometry: geometry)
+                )
 
-            MarkdownRenderer(
-                document: document,
-                theme: theme,
-                baseURL: baseURL
-            )
-            .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
-                GeometryReader { geometry in
-                    let collection = AnySelectionLayoutCollection(
-                        LiveSelectionLayoutCollection(base: value, geometry: geometry)
-                    )
-
-                    Color.clear
-                        .onAppear {
-                            model.setLayoutCollection(collection)
-                        }
-                        .onChange(of: collection) { _, newValue in
-                            model.setLayoutCollection(newValue)
-                        }
-                }
-                .allowsHitTesting(false)
+                Color.clear
+                    .onAppear {
+                        model.setLayoutCollection(collection)
+                    }
+                    .onChange(of: collection) { _, newValue in
+                        model.setLayoutCollection(newValue)
+                    }
             }
-            .compositingGroup()
-            
+            .allowsHitTesting(false)
+        }
+        .background {
+            SelectionInteractionOverlay(model: model)
+                .clipped()
+        }
+        .overlay {
             SelectionHighlightLayer(model: model)
                 .allowsHitTesting(false)
                 .blendMode(.multiply)
+                .clipped()
         }
+        .compositingGroup()
     }
 }
 
