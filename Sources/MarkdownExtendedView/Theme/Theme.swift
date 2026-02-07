@@ -241,6 +241,15 @@ public struct MarkdownTheme: Sendable {
         default: return heading6Font
         }
     }
+    
+    public func toTextAlignment() -> TextAlignment {
+        switch textAlignment {
+        case .center: return .center
+        case .leading: return .leading
+        case .trailing: return .trailing
+        default: return .leading
+        }
+    }
 }
 
 // MARK: - Built-in Themes
