@@ -22,7 +22,7 @@ struct HighlightedCodeView: View {
         let tokens = highlighter.tokenize(code.trimmingCharacters(in: .newlines), language: language)
         let lines = splitIntoLines(tokens)
 
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: theme.codeLineSpacing) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, lineTokens in
                 lineView(for: lineTokens)
             }
