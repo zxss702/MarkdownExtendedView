@@ -30,7 +30,7 @@ struct SelectableMarkdownRendererNative: View {
             theme: theme,
             baseURL: baseURL
         )
-        .overlayPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
+        .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
             GeometryReader { geometry in
                 let collection = AnySelectionLayoutCollection(
                     LiveSelectionLayoutCollection(base: value, geometry: geometry)
