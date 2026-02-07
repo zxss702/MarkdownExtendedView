@@ -27,6 +27,9 @@ let package = Package(
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown"),
                 .product(name: "ExtendedSwiftMath", package: "ExtendedSwiftMath"),
+            ],
+            resources: [
+                .process("Views/mermaid.js"),
             ]
         ),
         .testTarget(
