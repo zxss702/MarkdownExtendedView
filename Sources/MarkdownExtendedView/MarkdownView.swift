@@ -94,6 +94,7 @@ public struct MarkdownView: View {
                 }
             }
         }
+        .contentTransition(.numericText())
         .onAppear {
             let newValue = content
             updateTask = Task.detached {
@@ -111,7 +112,9 @@ public struct MarkdownView: View {
                 let doc = await parseMarkdown(newValue)
                 try Task.checkCancellation()
                 await MainActor.run {
-                    document = doc
+                    withAnimation(.snappy) {
+                        document = doc
+                    }
                 }
             }
         }
