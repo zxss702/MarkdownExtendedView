@@ -40,7 +40,7 @@ public struct FootnoteProcessingResult: Sendable {
 /// let result = preprocessor.process(markdownString)
 /// // Use result.processedMarkdown with swift-markdown parser
 /// ```
-public struct FootnotePreprocessor: Sendable {
+public nonisolated struct FootnotePreprocessor: Sendable {
 
     /// Superscript digits for footnote numbers.
     private static let superscriptDigits: [Character: Character] = [

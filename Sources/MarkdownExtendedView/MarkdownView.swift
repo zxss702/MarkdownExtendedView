@@ -73,33 +73,57 @@ public struct MarkdownView: View {
     }
 
     // MARK: - Body
-
+    @State var document: Document? = nil
+    @State var updateTask: Task<Void, Error>? = nil
+    
     public var body: some View {
-        let document = parseMarkdown(content)
-
-        Group {
-            if features.contains(.textSelection) {
-                SelectableMarkdownRenderer(
-                    document: document,
-                    theme: theme,
-                    baseURL: baseURL
-                )
-            } else {
-                MarkdownRenderer(
-                    document: document,
-                    theme: theme,
-                    baseURL: baseURL
-                )
+        ZStack {
+            if let document {
+                if features.contains(.textSelection) {
+                    SelectableMarkdownRenderer(
+                        document: document,
+                        theme: theme,
+                        baseURL: baseURL
+                    )
+                } else {
+                    MarkdownRenderer(
+                        document: document,
+                        theme: theme,
+                        baseURL: baseURL
+                    )
+                }
+            }
+        }
+        .onAppear {
+            let newValue = content
+            updateTask = Task.detached {
+                let doc = await parseMarkdown(newValue)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    document = doc
+                }
+            }
+        }
+        .onChange(of: content) { oldValue, newValue in
+            updateTask?.cancel()
+            updateTask = Task.detached {
+                try await Task.sleep(for: .seconds(0.016))
+                let doc = await parseMarkdown(newValue)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    document = doc
+                }
             }
         }
     }
 
     // MARK: - Parsing
 
-    private func parseMarkdown(_ content: String) -> Document {
+    nonisolated private func parseMarkdown(_ content: String) async -> Document {
         var processedContent = content
 
         // Pre-process footnotes if enabled
+        let features = await features
         if features.contains(.footnotes) {
             let footnoteResult = FootnotePreprocessor().process(processedContent)
             processedContent = footnoteResult.processedMarkdown

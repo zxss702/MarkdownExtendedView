@@ -10,7 +10,7 @@ import Foundation
 ///
 /// Since swift-markdown doesn't recognize LaTeX syntax ($...$ and $$...$$),
 /// this preprocessor identifies LaTeX regions for special handling during rendering.
-enum LaTeXPreprocessor {
+nonisolated enum LaTeXPreprocessor {
 
     // MARK: - Public API
 
