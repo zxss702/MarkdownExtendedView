@@ -78,7 +78,7 @@ public struct MarkdownView: View {
     
     public var body: some View {
         ZStack {
-            let document = document ?? parseMarkdown(content)
+            let document = document ?? parseMarkdown1(content)
             if features.contains(.textSelection) {
                 SelectableMarkdownRenderer(
                     document: document,
@@ -125,7 +125,8 @@ public struct MarkdownView: View {
 
         return Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
     }
-    private func parseMarkdown(_ content: String) -> Document {
+    
+    private func parseMarkdown1(_ content: String) -> Document {
         var processedContent = content
 
         // Pre-process footnotes if enabled
@@ -139,7 +140,9 @@ public struct MarkdownView: View {
         processedContent = LaTeXPreprocessor.process(processedContent)
 
         let doc = Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
-        self.document = doc
+        if self.document == nil {
+            self.document = doc
+        }
         return doc
     }
 }
