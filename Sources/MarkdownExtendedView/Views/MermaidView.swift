@@ -26,7 +26,7 @@ struct MermaidView: View {
     let code: String
     let theme: MarkdownTheme
 
-    @State private var height: CGFloat = 200
+    @State private var height: CGFloat = 0
 
     var body: some View {
         MermaidWebView(code: code, height: $height)
@@ -67,12 +67,15 @@ struct MermaidWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.lastLoadedCode != code else { return }
+        context.coordinator.lastLoadedCode = code
         let html = generateHTML(for: code)
         webView.loadHTMLString(html, baseURL: Bundle.module.resourceURL)
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: MermaidWebView
+        var lastLoadedCode: String?
 
         init(_ parent: MermaidWebView) {
             self.parent = parent
@@ -80,7 +83,22 @@ struct MermaidWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Get the content height after rendering
-            webView.evaluateJavaScript("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)") { [weak self] result, _ in
+            webView.evaluateJavaScript(
+                """
+                (() => {
+                    const root = document.getElementById('mermaid-root');
+                    const svg = root ? root.querySelector('svg') : null;
+                    if (!svg) {
+                        return 0;
+                    }
+                    const bodyStyle = window.getComputedStyle(document.body);
+                    const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
+                    const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+                    const contentHeight = svg.getBoundingClientRect().height + bodyPaddingTop + bodyPaddingBottom;
+                    return Math.max(Math.ceil(contentHeight), 100);
+                })()
+                """
+            ) { [weak self] result, _ in
                 self?.updateHeight(from: result)
             }
         }
@@ -107,7 +125,9 @@ struct MermaidWebView: UIViewRepresentable {
 
             guard let parsedHeight else { return }
             DispatchQueue.main.async {
-                self.parent.height = max(parsedHeight, 100)
+                let newHeight = max(parsedHeight, 0)
+                guard abs(self.parent.height - newHeight) > 0.5 else { return }
+                self.parent.height = newHeight
             }
         }
     }
@@ -138,12 +158,15 @@ struct MermaidWebView: NSViewRepresentable {
     }
     
     func updateNSView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.lastLoadedCode != code else { return }
+        context.coordinator.lastLoadedCode = code
         let html = generateHTML(for: code)
         webView.loadHTMLString(html, baseURL: Bundle.module.resourceURL)
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: MermaidWebView
+        var lastLoadedCode: String?
 
         init(_ parent: MermaidWebView) {
             self.parent = parent
@@ -151,7 +174,22 @@ struct MermaidWebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Get the content height after rendering
-            webView.evaluateJavaScript("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)") { [weak self] result, _ in
+            webView.evaluateJavaScript(
+                """
+                (() => {
+                    const root = document.getElementById('mermaid-root');
+                    const svg = root ? root.querySelector('svg') : null;
+                    if (!svg) {
+                        return 0;
+                    }
+                    const bodyStyle = window.getComputedStyle(document.body);
+                    const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
+                    const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+                    const contentHeight = svg.getBoundingClientRect().height + bodyPaddingTop + bodyPaddingBottom;
+                    return Math.max(Math.ceil(contentHeight), 100);
+                })()
+                """
+            ) { [weak self] result, _ in
                 self?.updateHeight(from: result)
             }
         }
@@ -178,7 +216,9 @@ struct MermaidWebView: NSViewRepresentable {
 
             guard let parsedHeight else { return }
             DispatchQueue.main.async {
-                self.parent.height = max(parsedHeight, 100)
+                let newHeight = max(parsedHeight, 0)
+                guard abs(self.parent.height - newHeight) > 0.5 else { return }
+                self.parent.height = newHeight
             }
         }
     }
@@ -195,6 +235,7 @@ private func generateHTML(for code: String) -> String {
         .replacingOccurrences(of: "\\", with: "\\\\")
         .replacingOccurrences(of: "`", with: "\\`")
         .replacingOccurrences(of: "$", with: "\\$")
+        .replacingOccurrences(of: "</script>", with: "<\\/script>", options: .caseInsensitive, range: nil)
 
     return """
     <!DOCTYPE html>
@@ -230,12 +271,14 @@ private func generateHTML(for code: String) -> String {
         </style>
     </head>
     <body>
-        <div class="mermaid" id="mermaid-root">
-        \(escapedCode)
-        </div>
+        <div id="mermaid-root"></div>
         <script>
+            const mermaidDefinition = `\(escapedCode)`;
+            let renderAttempt = 0;
+
             mermaid.initialize({
-                startOnLoad: true,
+                startOnLoad: false,
+                suppressErrorRendering: true,
                 theme: 'neutral',
                 securityLevel: 'loose',
                 flowchart: {
@@ -246,6 +289,38 @@ private func generateHTML(for code: String) -> String {
                     useMaxWidth: true
                 }
             });
+
+            async function renderMermaidSafely() {
+                const root = document.getElementById('mermaid-root');
+                if (!root) {
+                    reportHeight();
+                    return;
+                }
+
+                const currentAttempt = ++renderAttempt;
+                root.innerHTML = '';
+
+                try {
+                    const renderId = `mermaid-diagram-${Date.now()}-${currentAttempt}`;
+                    const result = await mermaid.render(renderId, mermaidDefinition);
+
+                    // Ignore stale render results if a newer attempt has started.
+                    if (currentAttempt !== renderAttempt) {
+                        return;
+                    }
+
+                    root.innerHTML = result.svg;
+                    if (typeof result.bindFunctions === 'function') {
+                        result.bindFunctions(root);
+                    }
+                    applyFullWidth();
+                } catch (_) {
+                    // Silent failure: no error diagram and no placeholder UI.
+                    root.innerHTML = '';
+                }
+
+                refreshLayout();
+            }
 
             function applyFullWidth() {
                 const svg = document.querySelector('#mermaid-root svg');
@@ -262,19 +337,16 @@ private func generateHTML(for code: String) -> String {
             function reportHeight() {
                 const root = document.getElementById('mermaid-root');
                 const svg = root ? root.querySelector('svg') : null;
-                const bodyStyle = window.getComputedStyle(document.body);
-                const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
-                const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                const contentHeight = svg
-                    ? svg.getBoundingClientRect().height
-                    : (root ? root.getBoundingClientRect().height : 0);
-                const fallbackHeight = Math.max(
-                    document.body.scrollHeight,
-                    document.documentElement.scrollHeight
-                );
-                const height = Math.ceil(
-                    (contentHeight > 0 ? contentHeight + bodyPaddingTop + bodyPaddingBottom : fallbackHeight)
-                );
+                let height = 0;
+
+                if (svg) {
+                    const bodyStyle = window.getComputedStyle(document.body);
+                    const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
+                    const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+                    const contentHeight = svg.getBoundingClientRect().height + bodyPaddingTop + bodyPaddingBottom;
+                    height = Math.max(Math.ceil(contentHeight), 100);
+                }
+
                 if (
                     window.webkit &&
                     window.webkit.messageHandlers &&
@@ -290,18 +362,10 @@ private func generateHTML(for code: String) -> String {
             }
 
             window.addEventListener('load', () => {
+                renderMermaidSafely();
                 refreshLayout();
                 setTimeout(refreshLayout, 0);
                 setTimeout(refreshLayout, 80);
-                // Mermaid render is async; poll briefly to catch first SVG insertion.
-                let attempts = 0;
-                const timer = setInterval(() => {
-                    refreshLayout();
-                    attempts += 1;
-                    if (attempts > 40) {
-                        clearInterval(timer);
-                    }
-                }, 50);
             });
 
             window.addEventListener('resize', () => {
