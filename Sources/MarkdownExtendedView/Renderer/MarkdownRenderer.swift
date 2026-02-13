@@ -244,7 +244,6 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderTable(_ table: Markdown.Table) -> some View {
         let cellArrays = extractTableCells(from: table)
-
         VStack(spacing: 0) {
             // Header row
             if !cellArrays.header.isEmpty {
@@ -277,6 +276,7 @@ struct MarkdownRenderer: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(.secondary.opacity(0.3), lineWidth: 1)
         )
+        .selectionTextPassThrough()
     }
 
     /// Extracts cells from a table into arrays for easier SwiftUI rendering.
@@ -298,7 +298,6 @@ struct MarkdownRenderer: View {
                     .padding(.vertical, isHeader ? 10 : 9)
 
                 if index < cells.count - 1 {
-                    
                     Rectangle()
                         .fill(.secondary.opacity(0.3))
                         .frame(width: 1)
