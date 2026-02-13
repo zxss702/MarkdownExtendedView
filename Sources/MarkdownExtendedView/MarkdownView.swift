@@ -95,15 +95,8 @@ public struct MarkdownView: View {
             }
         }
         .contentTransition(.numericText())
-        .onAppear {
-            let newValue = content
-            updateTask = Task.detached {
-                let doc = await parseMarkdown(newValue)
-                try Task.checkCancellation()
-                await MainActor.run {
-                    document = doc
-                }
-            }
+        .task {
+            document = await parseMarkdown(content)
         }
         .onChange(of: content) { oldValue, newValue in
             updateTask?.cancel()
