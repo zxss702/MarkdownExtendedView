@@ -94,7 +94,7 @@ public struct MarkdownView: View {
             }
         }
         .contentTransition(.numericText())
-        .onChange(of: content) { oldValue, newValue in
+        .onChange(of: content, initial: true) { oldValue, newValue in
             updateTask?.cancel()
             updateTask = Task.detached {
                 try await Task.sleep(for: .seconds(0.016))
@@ -140,9 +140,6 @@ public struct MarkdownView: View {
         processedContent = LaTeXPreprocessor.process(processedContent)
 
         let doc = Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
-        if self.document == nil {
-            self.document = doc
-        }
         return doc
     }
 }
