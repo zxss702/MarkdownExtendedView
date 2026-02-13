@@ -60,7 +60,6 @@ struct SelectableMarkdownRendererNative: View {
                 .clipped()
                 .transition(.identity)
         }
-        .compositingGroup()
     }
 }
 
