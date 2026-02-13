@@ -78,26 +78,22 @@ public struct MarkdownView: View {
     
     public var body: some View {
         ZStack {
-            if let document {
-                if features.contains(.textSelection) {
-                    SelectableMarkdownRenderer(
-                        document: document,
-                        theme: theme,
-                        baseURL: baseURL
-                    )
-                } else {
-                    MarkdownRenderer(
-                        document: document,
-                        theme: theme,
-                        baseURL: baseURL
-                    )
-                }
+            let document = document ?? parseMarkdown(content)
+            if features.contains(.textSelection) {
+                SelectableMarkdownRenderer(
+                    document: document,
+                    theme: theme,
+                    baseURL: baseURL
+                )
+            } else {
+                MarkdownRenderer(
+                    document: document,
+                    theme: theme,
+                    baseURL: baseURL
+                )
             }
         }
         .contentTransition(.numericText())
-        .task {
-            document = await parseMarkdown(content)
-        }
         .onChange(of: content) { oldValue, newValue in
             updateTask?.cancel()
             updateTask = Task.detached {
@@ -114,7 +110,6 @@ public struct MarkdownView: View {
     }
 
     // MARK: - Parsing
-
     nonisolated private func parseMarkdown(_ content: String) async -> Document {
         var processedContent = content
 
@@ -129,6 +124,23 @@ public struct MarkdownView: View {
         processedContent = LaTeXPreprocessor.process(processedContent)
 
         return Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
+    }
+    private func parseMarkdown(_ content: String) -> Document {
+        var processedContent = content
+
+        // Pre-process footnotes if enabled
+        let features = features
+        if features.contains(.footnotes) {
+            let footnoteResult = FootnotePreprocessor().process(processedContent)
+            processedContent = footnoteResult.processedMarkdown
+        }
+
+        // Pre-process content to handle LaTeX blocks before markdown parsing
+        processedContent = LaTeXPreprocessor.process(processedContent)
+
+        let doc = Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
+        self.document = doc
+        return doc
     }
 }
 
