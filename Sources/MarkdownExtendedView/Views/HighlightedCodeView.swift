@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// This view tokenizes code using the ``SyntaxHighlighter`` and renders
 /// each token with the appropriate color from the theme's ``SyntaxColors``.
-struct HighlightedCodeView: View {
+public struct HighlightedCodeView: View {
 
     let code: String
     let language: String?
@@ -18,7 +18,13 @@ struct HighlightedCodeView: View {
 
     private let highlighter = SyntaxHighlighter()
 
-    var body: some View {
+    public init(code: String, language: String?, theme: MarkdownTheme) {
+        self.code = code
+        self.language = language
+        self.theme = theme
+    }
+    
+    public var body: some View {
         let tokens = highlighter.tokenize(code.trimmingCharacters(in: .newlines), language: language)
         let lines = splitIntoLines(tokens)
 
