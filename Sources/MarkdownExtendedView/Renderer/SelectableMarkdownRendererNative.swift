@@ -37,28 +37,20 @@ struct SelectableMarkdownRendererNative: View {
                 )
 
                 Color.clear
-                    .onAppear {
+                    .task(id: collection) {
                         model.setLayoutCollection(collection)
-                    }
-                    .onChange(of: collection) { _, newValue in
-                        model.setLayoutCollection(newValue)
                     }
             }
             .allowsHitTesting(false)
         }
         .background {
-            if !(model.layoutCollection is EmptySelectionLayoutCollection) {
-                SelectionInteractionOverlay(model: model)
-                    .clipped()
-                    .transition(.identity)
-            }
+            SelectionInteractionOverlay(model: model)
+                .opacity((model.layoutCollection is EmptySelectionLayoutCollection) ? 0 : 1)
         }
         .overlay {
             SelectionHighlightLayer(model: model)
                 .allowsHitTesting(false)
                 .blendMode(.multiply)
-                .clipped()
-                .transition(.identity)
         }
     }
 }
@@ -502,19 +494,21 @@ private struct SelectionHighlightLayer: View {
     let model: SelectionModel
 
     #if canImport(AppKit)
-    private let fillColor = Color(nsColor: .selectedTextBackgroundColor)//.opacity(0.45)
+    private let fillColor = Color(nsColor: .selectedTextBackgroundColor).opacity(0.5)
     #else
     private let fillColor = Color(uiColor: .systemBlue).opacity(0.28)
     #endif
 
     var body: some View {
         if !model.selectionRects.isEmpty {
-            Path { path in
+            Canvas { context, size in
                 for selectionRect in model.selectionRects {
-                    path.addRect(selectionRect.rect.integral)
+                    context.fill(
+                        Path(selectionRect.rect),
+                        with: .color(fillColor)
+                    )
                 }
             }
-            .fill(fillColor)
         }
     }
 }
