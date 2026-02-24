@@ -48,7 +48,6 @@ public struct MarkdownView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownFeatures) private var features
 
     // MARK: - Initialization
 
@@ -77,16 +76,9 @@ public struct MarkdownView: View {
     @State var updateTask: Task<Void, Error>? = nil
     
     public var body: some View {
-        ZStack {
-            let document = document ?? parseMarkdown1(content)
-            if features.contains(.textSelection) {
+        VStack {
+            if let document {
                 SelectableMarkdownRenderer(
-                    document: document,
-                    theme: theme,
-                    baseURL: baseURL
-                )
-            } else {
-                MarkdownRenderer(
                     document: document,
                     theme: theme,
                     baseURL: baseURL
@@ -94,12 +86,21 @@ public struct MarkdownView: View {
             }
         }
         .contentTransition(.numericText())
-        .onChange(of: content, initial: true) { oldValue, newValue in
+        .onAppear {
+            let content = content
+            updateTask = Task.detached {
+                let doc = await parseMarkdown(content)
+                await MainActor.run {
+                    document = doc
+                }
+            }
+        }
+        .onChange(of: content) { oldValue, newValue in
             updateTask?.cancel()
             updateTask = Task.detached {
-                try await Task.sleep(for: .seconds(0.016))
-                let doc = await parseMarkdown(newValue)
+                try await Task.sleep(for: .seconds(0.1))
                 try Task.checkCancellation()
+                let doc = await parseMarkdown(newValue)
                 await MainActor.run {
                     withAnimation(.snappy) {
                         document = doc
@@ -114,12 +115,9 @@ public struct MarkdownView: View {
         var processedContent = content
 
         // Pre-process footnotes if enabled
-        let features = await features
-        if features.contains(.footnotes) {
-            let footnoteResult = FootnotePreprocessor().process(processedContent)
-            processedContent = footnoteResult.processedMarkdown
-        }
-
+        let footnoteResult = FootnotePreprocessor().process(processedContent)
+        processedContent = footnoteResult.processedMarkdown
+        
         // Pre-process content to handle LaTeX blocks before markdown parsing
         processedContent = LaTeXPreprocessor.process(processedContent)
 
@@ -130,16 +128,16 @@ public struct MarkdownView: View {
         var processedContent = content
 
         // Pre-process footnotes if enabled
-        let features = features
-        if features.contains(.footnotes) {
-            let footnoteResult = FootnotePreprocessor().process(processedContent)
-            processedContent = footnoteResult.processedMarkdown
-        }
+        let footnoteResult = FootnotePreprocessor().process(processedContent)
+        processedContent = footnoteResult.processedMarkdown
 
         // Pre-process content to handle LaTeX blocks before markdown parsing
         processedContent = LaTeXPreprocessor.process(processedContent)
 
         let doc = Document(parsing: processedContent, options: [.disableSmartOpts, .disableSourcePosOpts])
+        Task {
+            self.document = doc
+        }
         return doc
     }
 }

@@ -115,22 +115,6 @@ private struct MarkdownLinkHandlerKey: EnvironmentKey {
 }
 
 public extension EnvironmentValues {
-
-    /// The enabled Markdown features for ``MarkdownView`` instances.
-    ///
-    /// Set this value using the ``SwiftUI/View/markdownFeatures(_:)`` modifier:
-    ///
-    /// ```swift
-    /// MarkdownView(content)
-    ///     .markdownFeatures([.links, .images])
-    /// ```
-    ///
-    /// The features propagate through the view hierarchy.
-    var markdownFeatures: MarkdownFeatures {
-        get { self[MarkdownFeaturesKey.self] }
-        set { self[MarkdownFeaturesKey.self] = newValue }
-    }
-
     /// A custom handler for link taps in ``MarkdownView``.
     ///
     /// When set, this handler is called instead of the default link behavior.
@@ -152,27 +136,6 @@ public extension EnvironmentValues {
 // MARK: - View Modifiers
 
 public extension View {
-
-    /// Enables specific Markdown features for this view hierarchy.
-    ///
-    /// By default, all opt-in features are disabled. Use this modifier to
-    /// enable features like clickable links or image loading.
-    ///
-    /// ```swift
-    /// // Enable links only
-    /// MarkdownView(content)
-    ///     .markdownFeatures(.links)
-    ///
-    /// // Enable multiple features
-    /// MarkdownView(content)
-    ///     .markdownFeatures([.links, .images])
-    /// ```
-    ///
-    /// - Parameter features: The features to enable.
-    /// - Returns: A view with the specified features enabled.
-    func markdownFeatures(_ features: MarkdownFeatures) -> some View {
-        environment(\.markdownFeatures, features)
-    }
 
     /// Sets a custom handler for link taps in Markdown content.
     ///

@@ -16,11 +16,9 @@ struct MarkdownImageView: View {
     let image: Markdown.Image
     let theme: MarkdownTheme
     let baseURL: URL?
-
-    @Environment(\.markdownFeatures) private var features
-
+    
     var body: some View {
-        if features.contains(.images), let url = resolvedURL {
+        if let url = resolvedURL {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let loadedImage):

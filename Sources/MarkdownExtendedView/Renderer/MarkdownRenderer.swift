@@ -14,7 +14,6 @@ struct MarkdownRenderer: View {
     let theme: MarkdownTheme
     let baseURL: URL?
 
-    @Environment(\.markdownFeatures) private var features
     @Environment(\.markdownLinkHandler) private var linkHandler
 
     var body: some View {
@@ -24,21 +23,6 @@ struct MarkdownRenderer: View {
             }
         }
         .lineSpacing(theme.paragraphSpacing)
-    }
-
-    /// Whether clickable links are enabled.
-    private var linksEnabled: Bool {
-        features.contains(.links)
-    }
-
-    /// Whether syntax highlighting is enabled.
-    private var syntaxHighlightingEnabled: Bool {
-        features.contains(.syntaxHighlighting)
-    }
-
-    /// Whether Mermaid diagram rendering is enabled.
-    private var mermaidEnabled: Bool {
-        features.contains(.mermaid)
     }
 
     // MARK: - Block Rendering
@@ -113,17 +97,13 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderMermaidBlock(_ codeBlock: CodeBlock) -> some View {
-        if mermaidEnabled {
-            MermaidView(code: codeBlock.code, theme: theme)
-        } else {
-            MermaidPlaceholderView(code: codeBlock.code, theme: theme)
-        }
+        MermaidView(code: codeBlock.code, theme: theme)
     }
 
     @ViewBuilder
     private func renderRegularCodeBlock(_ codeBlock: CodeBlock) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            if syntaxHighlightingEnabled && codeBlock.language != nil {
+        Group {
+            if codeBlock.language != nil {
                 HighlightedCodeView(
                     code: codeBlock.code,
                     language: codeBlock.language,
@@ -135,9 +115,7 @@ struct MarkdownRenderer: View {
                     .foregroundColor(theme.textColor)
             }
         }
-        .allowsHitTesting(false)
         .padding(theme.codeBlockPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.codeBackgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .selectionTextPassThrough()
@@ -312,8 +290,7 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderInlineChildren(_ parent: any Markup) -> some View {
-        let inlineText = buildInlineText(from: parent)
-        inlineText
+        buildInlineText(from: parent)
     }
 
     /// Builds a Text view from inline children, handling LaTeX segments and links.
@@ -326,21 +303,16 @@ struct MarkdownRenderer: View {
         }
 
         // Check if links are enabled and content contains links
-        if linksEnabled && containsLinks(parent) {
+        if containsLinks(parent) {
             return AnyView(renderTextWithLinks(parent))
         }
 
         // Check if images are enabled and content contains images
-        if imagesEnabled && containsImages(parent) {
+        if containsImages(parent) {
             return AnyView(renderTextWithImages(parent))
         }
 
         return AnyView(buildAttributedText(from: parent).selectionTextPassThrough())
-    }
-
-    /// Whether image loading is enabled.
-    private var imagesEnabled: Bool {
-        features.contains(.images)
     }
 
     /// Checks if the markup contains any Link nodes.
@@ -521,7 +493,7 @@ struct MarkdownRenderer: View {
         case let code as InlineCode:
             return SwiftUI.Text(code.code)
                 .font(theme.codeFont)
-
+            
         case let link as Markdown.Link:
             let inner = buildTextFromChildren(link)
             return inner.foregroundColor(theme.linkColor)

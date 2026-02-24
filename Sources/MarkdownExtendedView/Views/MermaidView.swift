@@ -378,32 +378,3 @@ private func generateHTML(for code: String) -> String {
     </html>
     """
 }
-
-/// A placeholder view shown when mermaid is disabled.
-struct MermaidPlaceholderView: View {
-
-    let code: String
-    let theme: MarkdownTheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "chart.bar.xaxis")
-                    .foregroundColor(theme.secondaryTextColor)
-                Text("Mermaid Diagram")
-                    .font(theme.bodyFont)
-                    .foregroundColor(theme.secondaryTextColor)
-            }
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code.trimmingCharacters(in: .newlines))
-                    .font(theme.codeBlockFont)
-                    .foregroundColor(theme.textColor)
-            }
-        }
-        .padding(theme.codeBlockPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.codeBackgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-}
