@@ -541,7 +541,7 @@ struct MarkdownRenderer: View {
             return inner.foregroundColor(theme.linkColor)
 
         case _ as SoftBreak:
-            return SwiftUI.Text(" ")
+            return SwiftUI.Text("\n")
 
         case _ as LineBreak:
             return SwiftUI.Text("\n")
