@@ -18,7 +18,7 @@ import Observation
 
 #if os(macOS) || os(iOS)
 public extension View {
-    public func selecable() -> some View {
+    func selectable() -> some View {
         modifier(SelectableMarkdownRendererViewModifier())
     }
 }
@@ -34,16 +34,11 @@ struct SelectableMarkdownRendererViewModifier: ViewModifier {
                         LiveSelectionLayoutCollection(base: value, geometry: geometry)
                     )
 
-                    Color.clear
+                    SelectionInteractionOverlay(model: model)
                         .task(id: collection) {
-                            model.setLayoutCollection(collection)
+                            await model.updateLayoutCollection(collection)
                         }
                 }
-                .allowsHitTesting(false)
-            }
-            .background {
-                SelectionInteractionOverlay(model: model)
-                    .opacity((model.layoutCollection is EmptySelectionLayoutCollection) ? 0 : 1)
             }
             .overlay {
                 SelectionHighlightLayer(model: model)
@@ -462,7 +457,7 @@ extension SelectionInteractionView: UITextInput {
 
     func selectionRects(for range: UITextRange) -> [UITextSelectionRect] {
         guard let rangeBox = range as? SelectionTextRangeBox else { return [] }
-        return model.selectionRects(for: rangeBox.wrappedValue).map(SelectionTextSelectionRectBox.init)
+        return model.selectionRectsSync(for: rangeBox.wrappedValue).map(SelectionTextSelectionRectBox.init)
     }
 
     func closestPosition(to point: CGPoint) -> UITextPosition? {
@@ -499,19 +494,38 @@ private struct SelectionHighlightLayer: View {
     #endif
 
     var body: some View {
-        if !model.selectionRects.isEmpty {
-            Canvas { context, size in
-                for selectionRect in model.selectionRects {
-                    context.fill(
-                        Path(selectionRect.rect),
-                        with: .color(fillColor)
-                    )
-                }
+        Canvas { context, size in
+            for selectionRect in model.selectionRects {
+                context.fill(
+                    Path(selectionRect.rect),
+                    with: .color(fillColor)
+                )
             }
         }
     }
 }
 
+private actor SelectionCalculator {
+    static let shared = SelectionCalculator()
+    
+    func processLayout(
+        newCollection: any SelectionTextLayoutCollection,
+        oldCollection: any SelectionTextLayoutCollection,
+        oldRange: SelectionTextRange?
+    ) -> (SelectionTextRange?, [SelectionRect], [CGRect]) {
+        _ = newCollection.layouts
+        let newRange = oldRange.flatMap { newCollection.reconcileRange($0, from: oldCollection) }
+        let rects = newRange.map { newCollection.selectionRects(for: $0) } ?? []
+        let hitRects = newCollection.textHitRects()
+        return (newRange, rects, hitRects)
+    }
+    
+    func calculateRects(for range: SelectionTextRange, in collection: any SelectionTextLayoutCollection) -> [SelectionRect] {
+        collection.selectionRects(for: range)
+    }
+}
+
+@MainActor
 @Observable
 private final class SelectionModel {
     var selectedRange: SelectionTextRange? {
@@ -519,7 +533,21 @@ private final class SelectionModel {
             selectionWillChange?()
         }
         didSet {
-            recalculateSelectionRects()
+            selectionRectTask?.cancel()
+            
+            if let selectedRange {
+                let collection = layoutCollection
+                selectionRectTask = Task.detached(priority: .userInitiated) {
+                    let rects = await SelectionCalculator.shared.calculateRects(for: selectedRange, in: collection)
+                    if !Task.isCancelled {
+                        await MainActor.run {
+                            self.selectionRects = rects
+                        }
+                    }
+                }
+            } else {
+                selectionRects = []
+            }
             selectionDidChange?()
         }
     }
@@ -528,6 +556,9 @@ private final class SelectionModel {
 
     @ObservationIgnored var selectionWillChange: (() -> Void)?
     @ObservationIgnored var selectionDidChange: (() -> Void)?
+    
+    @ObservationIgnored private var selectionRectTask: Task<Void, Never>?
+    @ObservationIgnored private var cachedTextHitRects: [CGRect] = []
     
     var layoutCollection: any SelectionTextLayoutCollection = EmptySelectionLayoutCollection()
 
@@ -540,18 +571,36 @@ private final class SelectionModel {
         return !selectedRange.isCollapsed
     }
 
-    func setLayoutCollection(_ layoutCollection: any SelectionTextLayoutCollection) {
-        guard !layoutCollection.isEqual(to: self.layoutCollection) else {
+    func updateLayoutCollection(_ newCollection: any SelectionTextLayoutCollection) async {
+        guard !newCollection.isEqual(to: self.layoutCollection) else { return }
+        
+        do {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        } catch {
             return
         }
 
-        let oldLayoutCollection = self.layoutCollection
-        self.layoutCollection = layoutCollection
-
-        if let selectedRange {
-            self.selectedRange = layoutCollection.reconcileRange(selectedRange, from: oldLayoutCollection)
+        let oldCollection = self.layoutCollection
+        let oldRange = self.selectedRange
+        
+        let updateTask = Task.detached(priority: .userInitiated) {
+            await SelectionCalculator.shared.processLayout(
+                newCollection: newCollection,
+                oldCollection: oldCollection,
+                oldRange: oldRange
+            )
+        }
+        
+        let (newRange, newRects, hitRects) = await updateTask.value
+        
+        guard !Task.isCancelled else { return }
+        
+        self.layoutCollection = newCollection
+        self.cachedTextHitRects = hitRects
+        if oldRange != nil {
+            self.selectedRange = newRange
         } else {
-            recalculateSelectionRects()
+            self.selectionRects = newRects
         }
     }
 
@@ -603,11 +652,11 @@ private final class SelectionModel {
     }
 
     func textHitRects() -> [CGRect] {
-        layoutCollection.textHitRects()
+        cachedTextHitRects
     }
 
     func containsText(at point: CGPoint) -> Bool {
-        layoutCollection.containsText(at: point)
+        cachedTextHitRects.contains { $0.contains(point) }
     }
 
     func selectedPlainText() -> String? {
@@ -633,17 +682,8 @@ private final class SelectionModel {
         layoutCollection.caretRect(for: position)
     }
 
-    func selectionRects(for range: SelectionTextRange) -> [SelectionRect] {
+    func selectionRectsSync(for range: SelectionTextRange) -> [SelectionRect] {
         layoutCollection.selectionRects(for: range)
-    }
-
-    private func recalculateSelectionRects() {
-        guard let selectedRange else {
-            selectionRects = []
-            return
-        }
-
-        selectionRects = layoutCollection.selectionRects(for: selectedRange)
     }
 }
 
@@ -766,7 +806,7 @@ private struct SelectionIndexPathSequence: Sequence, IteratorProtocol {
 }
 
 
-private protocol SelectionTextLayoutCollection {
+private protocol SelectionTextLayoutCollection: Sendable {
     var layouts: [any SelectionTextLayout] { get }
 
     func isEqual(to other: any SelectionTextLayoutCollection) -> Bool
@@ -774,7 +814,7 @@ private protocol SelectionTextLayoutCollection {
 }
 
 
-private struct AnySelectionLayoutCollection: SelectionTextLayoutCollection, Equatable {
+private struct AnySelectionLayoutCollection: SelectionTextLayoutCollection, @unchecked Sendable, Equatable {
     private let base: any SelectionTextLayoutCollection
 
     init(_ base: any SelectionTextLayoutCollection) {
@@ -799,7 +839,7 @@ private struct AnySelectionLayoutCollection: SelectionTextLayoutCollection, Equa
 }
 
 
-private protocol SelectionTextLayout {
+private protocol SelectionTextLayout: Sendable {
     var attributedString: NSAttributedString { get }
     var origin: CGPoint { get }
     var bounds: CGRect { get }
@@ -807,27 +847,27 @@ private protocol SelectionTextLayout {
 }
 
 
-private protocol SelectionTextLine {
+private protocol SelectionTextLine: Sendable {
     var origin: CGPoint { get }
     var typographicBounds: CGRect { get }
     var runs: [any SelectionTextRun] { get }
 }
 
 
-private protocol SelectionTextRun {
+private protocol SelectionTextRun: Sendable {
     var layoutDirection: LayoutDirection { get }
     var typographicBounds: CGRect { get }
     var slices: [any SelectionTextRunSlice] { get }
 }
 
 
-private protocol SelectionTextRunSlice {
+private protocol SelectionTextRunSlice: Sendable {
     var typographicBounds: CGRect { get }
     var characterRange: Range<Int> { get }
 }
 
 
-private struct EmptySelectionLayoutCollection: SelectionTextLayoutCollection {
+private struct EmptySelectionLayoutCollection: SelectionTextLayoutCollection, @unchecked Sendable {
     var layouts: [any SelectionTextLayout] { [] }
 
     func isEqual(to other: any SelectionTextLayoutCollection) -> Bool {
@@ -840,7 +880,7 @@ private struct EmptySelectionLayoutCollection: SelectionTextLayoutCollection {
 }
 
 
-private final class LiveSelectionLayoutCollection: SelectionTextLayoutCollection {
+private final class LiveSelectionLayoutCollection: SelectionTextLayoutCollection, @unchecked Sendable {
     private(set) lazy var layouts: [any SelectionTextLayout] = makeLayouts()
 
     private let base: SwiftUI.Text.LayoutKey.Value
@@ -870,7 +910,7 @@ private final class LiveSelectionLayoutCollection: SelectionTextLayoutCollection
 }
 
 
-private final class LiveSelectionTextLayout: SelectionTextLayout {
+private final class LiveSelectionTextLayout: SelectionTextLayout, @unchecked Sendable {
     var attributedString: NSAttributedString {
         joinedAttributedString.joined
     }
@@ -911,7 +951,7 @@ private final class LiveSelectionTextLayout: SelectionTextLayout {
 }
 
 
-private final class LiveSelectionTextLine: SelectionTextLine {
+private final class LiveSelectionTextLine: SelectionTextLine, @unchecked Sendable {
     var origin: CGPoint {
         base.origin
     }
@@ -950,7 +990,7 @@ private final class LiveSelectionTextLine: SelectionTextLine {
 }
 
 
-private final class LiveSelectionTextRun: SelectionTextRun {
+private final class LiveSelectionTextRun: SelectionTextRun, @unchecked Sendable {
     var layoutDirection: LayoutDirection {
         base.layoutDirection
     }
@@ -980,7 +1020,7 @@ private final class LiveSelectionTextRun: SelectionTextRun {
 }
 
 
-private struct EmptySelectionRun: SelectionTextRun {
+private struct EmptySelectionRun: SelectionTextRun, @unchecked Sendable {
     let layoutDirection: LayoutDirection = .leftToRight
     let typographicBounds: CGRect
     let slice: EmptySelectionRunSlice
@@ -991,7 +1031,7 @@ private struct EmptySelectionRun: SelectionTextRun {
 }
 
 
-private final class LiveSelectionTextRunSlice: SelectionTextRunSlice {
+private final class LiveSelectionTextRunSlice: SelectionTextRunSlice, @unchecked Sendable {
     var typographicBounds: CGRect {
         base.typographicBounds.rect
     }
@@ -1006,7 +1046,7 @@ private final class LiveSelectionTextRunSlice: SelectionTextRunSlice {
 }
 
 
-private struct EmptySelectionRunSlice: SelectionTextRunSlice {
+private struct EmptySelectionRunSlice: SelectionTextRunSlice, @unchecked Sendable {
     let typographicBounds: CGRect
     let characterRange: Range<Int>
 }

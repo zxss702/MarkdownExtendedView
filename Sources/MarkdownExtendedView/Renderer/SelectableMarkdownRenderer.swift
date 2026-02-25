@@ -24,7 +24,7 @@ struct SelectableMarkdownRenderer: View {
             baseURL: baseURL
         )
 #if os(macOS) || os(iOS)
-        .selecable()
+        .selectable()
 #endif
     }
 }
