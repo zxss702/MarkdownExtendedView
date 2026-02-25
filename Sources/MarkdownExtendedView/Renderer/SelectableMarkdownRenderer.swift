@@ -18,18 +18,13 @@ struct SelectableMarkdownRenderer: View {
     let baseURL: URL?
 
     var body: some View {
-#if os(macOS) || os(iOS)
-        SelectableMarkdownRendererNative(
-            document: document,
-            theme: theme,
-            baseURL: baseURL
-        )
-#else
         MarkdownRenderer(
             document: document,
             theme: theme,
             baseURL: baseURL
         )
+#if os(macOS) || os(iOS)
+        .selecable()
 #endif
     }
 }

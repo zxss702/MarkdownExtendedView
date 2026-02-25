@@ -16,44 +16,43 @@ import UIKit
 #endif
 import Observation
 
-struct SelectableMarkdownRendererNative: View {
-
-    let document: Document
-    let theme: MarkdownTheme
-    let baseURL: URL?
-
-    @State private var model = SelectionModel()
-
-    var body: some View {
-        MarkdownRenderer(
-            document: document,
-            theme: theme,
-            baseURL: baseURL
-        )
-        .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
-            GeometryReader { geometry in
-                let collection = AnySelectionLayoutCollection(
-                    LiveSelectionLayoutCollection(base: value, geometry: geometry)
-                )
-
-                Color.clear
-                    .task(id: collection) {
-                        model.setLayoutCollection(collection)
-                    }
-            }
-            .allowsHitTesting(false)
-        }
-        .background {
-            SelectionInteractionOverlay(model: model)
-                .opacity((model.layoutCollection is EmptySelectionLayoutCollection) ? 0 : 1)
-        }
-        .overlay {
-            SelectionHighlightLayer(model: model)
-                .allowsHitTesting(false)
-                .blendMode(.multiply)
-        }
+#if os(macOS) || os(iOS)
+public extension View {
+    public func selecable() -> some View {
+        modifier(SelectableMarkdownRendererViewModifier())
     }
 }
+
+struct SelectableMarkdownRendererViewModifier: ViewModifier {
+    @State private var model = SelectionModel()
+    
+    func body(content: Content) -> some View {
+        content
+            .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
+                GeometryReader { geometry in
+                    let collection = AnySelectionLayoutCollection(
+                        LiveSelectionLayoutCollection(base: value, geometry: geometry)
+                    )
+
+                    Color.clear
+                        .task(id: collection) {
+                            model.setLayoutCollection(collection)
+                        }
+                }
+                .allowsHitTesting(false)
+            }
+            .background {
+                SelectionInteractionOverlay(model: model)
+                    .opacity((model.layoutCollection is EmptySelectionLayoutCollection) ? 0 : 1)
+            }
+            .overlay {
+                SelectionHighlightLayer(model: model)
+                    .allowsHitTesting(false)
+                    .blendMode(.multiply)
+            }
+    }
+}
+#endif
 
 #if canImport(AppKit)
 
