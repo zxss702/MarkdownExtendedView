@@ -98,9 +98,10 @@ public struct MarkdownView: View {
         .onChange(of: content) { oldValue, newValue in
             updateTask?.cancel()
             updateTask = Task.detached {
-                try await Task.sleep(for: .seconds(0.1))
+                try await Task.sleep(for: .seconds(0.2))
                 try Task.checkCancellation()
-                let doc = await parseMarkdown(newValue)
+                let content = content
+                let doc = await parseMarkdown(content)
                 await MainActor.run {
                     withAnimation(.snappy) {
                         document = doc
@@ -121,7 +122,7 @@ public struct MarkdownView: View {
         // Pre-process content to handle LaTeX blocks before markdown parsing
         processedContent = LaTeXPreprocessor.process(processedContent)
 
-        return Document(parsing: processedContent, options: [.parseBlockDirectives, .parseSymbolLinks])
+        return Document(parsing: processedContent)
     }
     
     private func parseMarkdown1(_ content: String) -> Document {
@@ -134,7 +135,7 @@ public struct MarkdownView: View {
         // Pre-process content to handle LaTeX blocks before markdown parsing
         processedContent = LaTeXPreprocessor.process(processedContent)
 
-        let doc = Document(parsing: processedContent, options: [.parseBlockDirectives, .parseSymbolLinks])
+        let doc = Document(parsing: processedContent)
         Task {
             self.document = doc
         }
