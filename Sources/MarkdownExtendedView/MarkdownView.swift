@@ -78,11 +78,14 @@ public struct MarkdownView: View {
     public var body: some View {
         VStack {
             if let document {
-                SelectableMarkdownRenderer(
+                MarkdownRenderer(
                     document: document,
                     theme: theme,
                     baseURL: baseURL
                 )
+#if os(macOS) || os(iOS)
+                .selectable()
+#endif
             }
         }
         .contentTransition(.numericText())
