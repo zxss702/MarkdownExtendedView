@@ -27,9 +27,13 @@ struct MarkdownImageView: View {
                         .scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .accessibilityLabel(image.plainText)
-                default: EmptyView()
+                default:
+                    Color.white
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .frame(width: 320, height: 320)
                 }
             }
+            .frame(height: 320)
         } else {
             altTextView
         }
