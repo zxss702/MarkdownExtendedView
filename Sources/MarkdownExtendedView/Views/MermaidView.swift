@@ -15,7 +15,7 @@ import UIKit
 import AppKit
 #endif
 
-private let mermaidHeightMessageName = "mermaidHeight"
+private let mermaidSizeMessageName = "mermaidSize"
 
 /// A view that renders Mermaid diagrams using a WebView.
 ///
@@ -26,12 +26,12 @@ struct MermaidView: View {
     let code: String
     let theme: MarkdownTheme
 
-    @State private var height: CGFloat = 0
+    @State private var contentSize: CGSize = .zero
 
     var body: some View {
-        MermaidWebView(code: code, height: $height)
-            .allowsHitTesting(false)
-            .frame(height: height)
+        MermaidWebView(code: code, contentSize: $contentSize)
+            .frame(maxWidth: contentSize.width > 0 ? contentSize.width : .infinity)
+            .frame(height: contentSize.height > 0 ? contentSize.height : nil)
             .background(theme.codeBackgroundColor)
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
@@ -45,7 +45,7 @@ struct MermaidView: View {
 struct MermaidWebView: UIViewRepresentable {
 
     let code: String
-    @Binding var height: CGFloat
+    @Binding var contentSize: CGSize
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -53,17 +53,19 @@ struct MermaidWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.userContentController.add(context.coordinator, name: mermaidHeightMessageName)
+        configuration.userContentController.add(context.coordinator, name: mermaidSizeMessageName)
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.showsVerticalScrollIndicator = false
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.bounces = false
         webView.isOpaque = false
         webView.backgroundColor = .clear
         return webView
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: mermaidHeightMessageName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: mermaidSizeMessageName)
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
@@ -82,52 +84,53 @@ struct MermaidWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Get the content height after rendering
+            // Get the content size after rendering
             webView.evaluateJavaScript(
                 """
                 (() => {
                     const root = document.getElementById('mermaid-root');
                     const svg = root ? root.querySelector('svg') : null;
                     if (!svg) {
-                        return 0;
+                        return {width: 0, height: 0};
                     }
                     const bodyStyle = window.getComputedStyle(document.body);
                     const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
                     const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                    const contentHeight = svg.getBoundingClientRect().height + bodyPaddingTop + bodyPaddingBottom;
-                    return Math.max(Math.ceil(contentHeight), 100);
+                    const bodyPaddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
+                    const bodyPaddingRight = parseFloat(bodyStyle.paddingRight) || 0;
+                    const rect = svg.getBoundingClientRect();
+                    const contentHeight = rect.height + bodyPaddingTop + bodyPaddingBottom;
+                    const contentWidth = rect.width + bodyPaddingLeft + bodyPaddingRight;
+                    return {
+                        width: Math.max(Math.ceil(contentWidth), 50),
+                        height: Math.max(Math.ceil(contentHeight), 50)
+                    };
                 })()
                 """
             ) { [weak self] result, _ in
-                self?.updateHeight(from: result)
+                self?.updateSize(from: result)
             }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == mermaidHeightMessageName else { return }
-            updateHeight(from: message.body)
+            guard message.name == mermaidSizeMessageName else { return }
+            updateSize(from: message.body)
         }
 
-        private func updateHeight(from value: Any?) {
-            let parsedHeight: CGFloat?
-            switch value {
-            case let number as NSNumber:
-                parsedHeight = CGFloat(truncating: number)
-            case let doubleValue as Double:
-                parsedHeight = CGFloat(doubleValue)
-            case let intValue as Int:
-                parsedHeight = CGFloat(intValue)
-            case let cgValue as CGFloat:
-                parsedHeight = cgValue
-            default:
-                parsedHeight = nil
+        private func updateSize(from value: Any?) {
+            guard let dict = value as? [String: Any],
+                  let width = dict["width"] as? NSNumber,
+                  let height = dict["height"] as? NSNumber else {
+                return
             }
+            let w = CGFloat(truncating: width)
+            let h = CGFloat(truncating: height)
 
-            guard let parsedHeight else { return }
             DispatchQueue.main.async {
-                let newHeight = max(parsedHeight, 0)
-                guard abs(self.parent.height - newHeight) > 0.5 else { return }
-                self.parent.height = newHeight
+                let newSize = CGSize(width: max(w, 0), height: max(h, 0))
+                guard abs(self.parent.contentSize.width - newSize.width) > 0.5 || 
+                      abs(self.parent.contentSize.height - newSize.height) > 0.5 else { return }
+                self.parent.contentSize = newSize
             }
         }
     }
@@ -139,29 +142,46 @@ struct MermaidWebView: UIViewRepresentable {
 struct MermaidWebView: NSViewRepresentable {
 
     let code: String
-    @Binding var height: CGFloat
+    @Binding var contentSize: CGSize
     
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
     
-    func makeNSView(context: Context) -> WKWebView {
+    func makeNSView(context: Context) -> CustomWKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.userContentController.add(context.coordinator, name: mermaidHeightMessageName)
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        configuration.userContentController.add(context.coordinator, name: mermaidSizeMessageName)
+        let webView = CustomWKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
+        
+        // Disable internal scrolling on macOS WKWebView to pass scroll events to SwiftUI parent
+        if let scrollView = webView.enclosingScrollView {
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.scrollsDynamically = false
+        }
+        
+        webView.setValue(false, forKey: "drawsBackground")
         return webView
     }
 
-    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: mermaidHeightMessageName)
+    static func dismantleNSView(_ webView: CustomWKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: mermaidSizeMessageName)
     }
     
-    func updateNSView(_ webView: WKWebView, context: Context) {
+    func updateNSView(_ webView: CustomWKWebView, context: Context) {
         guard context.coordinator.lastLoadedCode != code else { return }
         context.coordinator.lastLoadedCode = code
         let html = generateHTML(for: code)
         webView.loadHTMLString(html, baseURL: Bundle.module.resourceURL)
+    }
+
+    class CustomWKWebView: WKWebView {
+        // macOS AppKit: Bypass vertical scrolling entirely to parent view
+        override func scrollWheel(with event: NSEvent) {
+            nextResponder?.scrollWheel(with: event)
+            super.scrollWheel(with: event)
+        }
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -173,52 +193,53 @@ struct MermaidWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Get the content height after rendering
+            // Get the content size after rendering
             webView.evaluateJavaScript(
                 """
                 (() => {
                     const root = document.getElementById('mermaid-root');
                     const svg = root ? root.querySelector('svg') : null;
                     if (!svg) {
-                        return 0;
+                        return {width: 0, height: 0};
                     }
                     const bodyStyle = window.getComputedStyle(document.body);
                     const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
                     const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                    const contentHeight = svg.getBoundingClientRect().height + bodyPaddingTop + bodyPaddingBottom;
-                    return Math.max(Math.ceil(contentHeight), 100);
+                    const bodyPaddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
+                    const bodyPaddingRight = parseFloat(bodyStyle.paddingRight) || 0;
+                    const rect = svg.getBoundingClientRect();
+                    const contentHeight = rect.height + bodyPaddingTop + bodyPaddingBottom;
+                    const contentWidth = rect.width + bodyPaddingLeft + bodyPaddingRight;
+                    return {
+                        width: Math.max(Math.ceil(contentWidth), 50),
+                        height: Math.max(Math.ceil(contentHeight), 50)
+                    };
                 })()
                 """
             ) { [weak self] result, _ in
-                self?.updateHeight(from: result)
+                self?.updateSize(from: result)
             }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == mermaidHeightMessageName else { return }
-            updateHeight(from: message.body)
+            guard message.name == mermaidSizeMessageName else { return }
+            updateSize(from: message.body)
         }
 
-        private func updateHeight(from value: Any?) {
-            let parsedHeight: CGFloat?
-            switch value {
-            case let number as NSNumber:
-                parsedHeight = CGFloat(truncating: number)
-            case let doubleValue as Double:
-                parsedHeight = CGFloat(doubleValue)
-            case let intValue as Int:
-                parsedHeight = CGFloat(intValue)
-            case let cgValue as CGFloat:
-                parsedHeight = cgValue
-            default:
-                parsedHeight = nil
+        private func updateSize(from value: Any?) {
+            guard let dict = value as? [String: Any],
+                  let width = dict["width"] as? NSNumber,
+                  let height = dict["height"] as? NSNumber else {
+                return
             }
+            let w = CGFloat(truncating: width)
+            let h = CGFloat(truncating: height)
 
-            guard let parsedHeight else { return }
             DispatchQueue.main.async {
-                let newHeight = max(parsedHeight, 0)
-                guard abs(self.parent.height - newHeight) > 0.5 else { return }
-                self.parent.height = newHeight
+                let newSize = CGSize(width: max(w, 0), height: max(h, 0))
+                guard abs(self.parent.contentSize.width - newSize.width) > 0.5 || 
+                      abs(self.parent.contentSize.height - newSize.height) > 0.5 else { return }
+                self.parent.contentSize = newSize
             }
         }
     }
@@ -242,7 +263,7 @@ private func generateHTML(for code: String) -> String {
     <html>
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <script src="./mermaid.js"></script>
         <style>
             * {
@@ -250,22 +271,25 @@ private func generateHTML(for code: String) -> String {
                 padding: 0;
                 box-sizing: border-box;
             }
-            html, body {
-                overflow: hidden;
+            html {
+                overflow-x: auto;
+                overflow-y: hidden;
+                overscroll-behavior-y: none;
             }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 padding: 16px;
+                margin: 0;
                 background: transparent;
+                display: inline-block;
+                min-width: 100%;
+                min-height: 100vh;
             }
             #mermaid-root {
-                width: 100%;
-                max-width: 100%;
+                width: max-content;
+                min-width: 100%;
             }
             #mermaid-root svg {
-                width: 100% !important;
-                max-width: 100%;
-                height: auto !important;
                 display: block;
             }
         </style>
@@ -273,6 +297,18 @@ private func generateHTML(for code: String) -> String {
     <body>
         <div id="mermaid-root"></div>
         <script>
+            // Intercept vertical wheel scrolling and prevent WebView from consuming it,
+            // allowing the event to bubble up to the native macOS/iOS ScrollView.
+            window.addEventListener('wheel', (e) => {
+                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                    // It's a vertical scroll. Prevent default WebView scroll action.
+                    e.preventDefault();
+                    // We don't propagate manually in WKWebView by default, 
+                    // preventDefault on body/html is enough to let AppKit/UIKit know 
+                    // the scroll wasn't consumed by the web content block.
+                }
+            }, { passive: false });
+
             const mermaidDefinition = `\(escapedCode)`;
             let renderAttempt = 0;
 
@@ -280,20 +316,23 @@ private func generateHTML(for code: String) -> String {
                 startOnLoad: false,
                 suppressErrorRendering: true,
                 theme: 'neutral',
+                themeVariables: {
+                    fontSize: '14px'
+                },
                 securityLevel: 'loose',
                 flowchart: {
-                    useMaxWidth: true,
+                    useMaxWidth: false,
                     htmlLabels: true
                 },
                 sequence: {
-                    useMaxWidth: true
+                    useMaxWidth: false
                 }
             });
 
             async function renderMermaidSafely() {
                 const root = document.getElementById('mermaid-root');
                 if (!root) {
-                    reportHeight();
+                    reportSize();
                     return;
                 }
 
@@ -304,7 +343,6 @@ private func generateHTML(for code: String) -> String {
                     const renderId = `mermaid-diagram-${Date.now()}-${currentAttempt}`;
                     const result = await mermaid.render(renderId, mermaidDefinition);
 
-                    // Ignore stale render results if a newer attempt has started.
                     if (currentAttempt !== renderAttempt) {
                         return;
                     }
@@ -313,52 +351,43 @@ private func generateHTML(for code: String) -> String {
                     if (typeof result.bindFunctions === 'function') {
                         result.bindFunctions(root);
                     }
-                    applyFullWidth();
                 } catch (_) {
-                    // Silent failure: no error diagram and no placeholder UI.
                     root.innerHTML = '';
                 }
 
                 refreshLayout();
             }
 
-            function applyFullWidth() {
-                const svg = document.querySelector('#mermaid-root svg');
-                if (!svg) {
-                    return;
-                }
-                svg.setAttribute('width', '100%');
-                svg.style.width = '100%';
-                svg.style.maxWidth = '100%';
-                svg.style.height = 'auto';
-                svg.removeAttribute('height');
-            }
-
-            function reportHeight() {
+            function reportSize() {
                 const root = document.getElementById('mermaid-root');
                 const svg = root ? root.querySelector('svg') : null;
                 let height = 0;
+                let width = 0;
 
                 if (svg) {
                     const bodyStyle = window.getComputedStyle(document.body);
                     const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
                     const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                    const contentHeight = svg.getBoundingClientRect().height + bodyPaddingTop + bodyPaddingBottom;
-                    height = Math.max(Math.ceil(contentHeight), 100);
+                    const bodyPaddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
+                    const bodyPaddingRight = parseFloat(bodyStyle.paddingRight) || 0;
+                    const rect = svg.getBoundingClientRect();
+                    const contentHeight = rect.height + bodyPaddingTop + bodyPaddingBottom;
+                    const contentWidth = rect.width + bodyPaddingLeft + bodyPaddingRight;
+                    height = Math.max(Math.ceil(contentHeight), 50);
+                    width = Math.max(Math.ceil(contentWidth), 50);
                 }
 
                 if (
                     window.webkit &&
                     window.webkit.messageHandlers &&
-                    window.webkit.messageHandlers.\(mermaidHeightMessageName)
+                    window.webkit.messageHandlers.\(mermaidSizeMessageName)
                 ) {
-                    window.webkit.messageHandlers.\(mermaidHeightMessageName).postMessage(height);
+                    window.webkit.messageHandlers.\(mermaidSizeMessageName).postMessage({width: width, height: height});
                 }
             }
 
             function refreshLayout() {
-                applyFullWidth();
-                reportHeight();
+                reportSize();
             }
 
             window.addEventListener('load', () => {
