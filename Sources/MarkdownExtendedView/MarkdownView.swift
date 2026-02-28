@@ -77,7 +77,7 @@ public struct MarkdownView: View {
     
     public var body: some View {
         VStack {
-            if let document {
+            if let document = document ?? (content.count > 1024 * 1024 ? nil : parseMarkdown1(content)) {
                 MarkdownRenderer(
                     document: document,
                     theme: theme,
@@ -90,11 +90,13 @@ public struct MarkdownView: View {
         }
         .contentTransition(.numericText())
         .onAppear {
-            let content = content
-            updateTask = Task.detached {
-                let doc = await parseMarkdown(content)
-                await MainActor.run {
-                    document = doc
+            if content.count > 1024 * 1024 {
+                let content = content
+                updateTask = Task.detached {
+                    let doc = await parseMarkdown(content)
+                    await MainActor.run {
+                        document = doc
+                    }
                 }
             }
         }
