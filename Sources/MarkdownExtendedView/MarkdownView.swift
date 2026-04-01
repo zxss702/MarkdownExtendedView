@@ -39,7 +39,11 @@ import Markdown
 /// MarkdownView(content: markdownString)
 ///     .markdownTheme(.gitHub)
 /// ```
-public struct MarkdownView: View {
+public struct MarkdownView: View, @MainActor Equatable {
+    public static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
+        lhs.content == rhs.content && lhs.baseURL == rhs.baseURL
+    }
+    
 
     // MARK: - Properties
 
@@ -59,78 +63,7 @@ public struct MarkdownView: View {
     public init(_ content: String, baseURL: URL? = nil) {
         self.content = content
         self.baseURL = baseURL
-    }
-
-    /// Creates a MarkdownView with the specified content.
-    ///
-    /// - Parameters:
-    ///   - content: The Markdown string to render (may include LaTeX equations).
-    ///   - baseURL: Optional base URL for resolving relative links and images.
-    public init(content: String, baseURL: URL? = nil) {
-        self.content = content
-        self.baseURL = baseURL
-    }
-
-    // MARK: - Body
-    @State var document: Document? = nil
-    @State var updateTask: Task<Void, Error>? = nil
-    
-    public var body: some View {
-        VStack {
-            if let document = document ?? (content.count > 1024 * 1024 ? nil : parseMarkdown1(content)) {
-                MarkdownRenderer(
-                    document: document,
-                    theme: theme,
-                    baseURL: baseURL
-                )
-#if os(macOS) || os(iOS)
-                .selectable()
-#endif
-            }
-        }
-        .contentTransition(.numericText())
-        .onAppear {
-            if content.count > 1024 * 1024 {
-                let content = content
-                updateTask = Task.detached {
-                    let doc = await parseMarkdown(content)
-                    await MainActor.run {
-                        document = doc
-                    }
-                }
-            }
-        }
-        .onChange(of: content) { oldValue, newValue in
-            updateTask?.cancel()
-            updateTask = Task.detached {
-                try await Task.sleep(for: .seconds(0.2))
-                try Task.checkCancellation()
-                let content = content
-                let doc = await parseMarkdown(content)
-                await MainActor.run {
-                    withAnimation(.snappy) {
-                        document = doc
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Parsing
-    nonisolated private func parseMarkdown(_ content: String) async -> Document {
-        var processedContent = content
-
-        // Pre-process footnotes if enabled
-        let footnoteResult = FootnotePreprocessor().process(processedContent)
-        processedContent = footnoteResult.processedMarkdown
         
-        // Pre-process content to handle LaTeX blocks before markdown parsing
-        processedContent = LaTeXPreprocessor.process(processedContent)
-
-        return Document(parsing: processedContent)
-    }
-    
-    private func parseMarkdown1(_ content: String) -> Document {
         var processedContent = content
 
         // Pre-process footnotes if enabled
@@ -141,10 +74,68 @@ public struct MarkdownView: View {
         processedContent = LaTeXPreprocessor.process(processedContent)
 
         let doc = Document(parsing: processedContent)
-        Task {
-            self.document = doc
+        self._document = State(wrappedValue: doc)
+    }
+
+    /// Creates a MarkdownView with the specified content.
+    ///
+    /// - Parameters:
+    ///   - content: The Markdown string to render (may include LaTeX equations).
+    ///   - baseURL: Optional base URL for resolving relative links and images.
+    public init(content: String, baseURL: URL? = nil) {
+        self.content = content
+        self.baseURL = baseURL
+        
+        var processedContent = content
+
+        // Pre-process footnotes if enabled
+        let footnoteResult = FootnotePreprocessor().process(processedContent)
+        processedContent = footnoteResult.processedMarkdown
+
+        // Pre-process content to handle LaTeX blocks before markdown parsing
+        processedContent = LaTeXPreprocessor.process(processedContent)
+
+        let doc = Document(parsing: processedContent)
+        self._document = State(wrappedValue: doc)
+        
+    }
+
+    // MARK: - Body
+    @State var document: Document
+    @State var updateTask: Task<Void, Error>? = nil
+    
+    public var body: some View {
+        MarkdownRenderer(
+            document: document,
+            theme: theme,
+            baseURL: baseURL
+        )
+#if os(macOS) || os(iOS)
+        .selectable()
+#endif
+        .contentTransition(.numericText())
+        .onChange(of: content) { oldValue, newValue in
+            updateTask?.cancel()
+            updateTask = Task.detached {
+                try await Task.sleep(for: .seconds(0.2))
+                try Task.checkCancellation()
+                var processedContent = newValue
+                
+                // Pre-process footnotes if enabled
+                let footnoteResult = FootnotePreprocessor().process(processedContent)
+                processedContent = footnoteResult.processedMarkdown
+                
+                // Pre-process content to handle LaTeX blocks before markdown parsing
+                processedContent = LaTeXPreprocessor.process(processedContent)
+                
+                let doc = Document(parsing: processedContent)
+                await MainActor.run {
+                    withAnimation(.snappy) {
+                        document = doc
+                    }
+                }
+            }
         }
-        return doc
     }
 }
 
