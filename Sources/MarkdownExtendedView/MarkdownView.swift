@@ -74,6 +74,7 @@ public struct MarkdownView: View, @MainActor Equatable {
     }
 }
 
+
 public extension View {
     func markdownTheme(_ theme: MarkdownTheme) -> some View {
         environment(\.markdownTheme, theme)
