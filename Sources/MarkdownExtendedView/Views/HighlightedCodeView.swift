@@ -109,7 +109,7 @@ public struct HighlightedCodeView: View {
 }
 
 private final class HighlightedCodeSnapshotCache {
-    static let shared: NSCache<NSString, HighlightedCodeSnapshot> = {
+    @MainActor static let shared: NSCache<NSString, HighlightedCodeSnapshot> = {
         let cache = NSCache<NSString, HighlightedCodeSnapshot>()
         cache.countLimit = 128
         return cache

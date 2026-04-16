@@ -61,7 +61,7 @@ public struct MarkdownView: View, @MainActor Equatable {
             }
 
             guard !Task.isCancelled else { return }
-            let nextSnapshot = MarkdownRenderSnapshot.parse(content)
+            let nextSnapshot = await MarkdownRenderSnapshot.parse(content)
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }

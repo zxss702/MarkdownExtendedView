@@ -1,14 +1,16 @@
 import Foundation
 import Markdown
 
-struct MarkdownRenderSnapshot {
+struct MarkdownRenderSnapshot: Sendable {
     let blocks: [MarkdownBlockNode]
 
-    static func parse(_ content: String) -> Self {
-        if let cached = MarkdownRenderSnapshotCache.shared.object(forKey: content as NSString) {
-            return cached.snapshot
+    static func parse(_ content: String) async -> Self {
+        if let cached = await MainActor.run(resultType: MarkdownRenderSnapshot?.self, body: {
+            return MarkdownRenderSnapshotCache.shared.object(forKey: content as NSString)?.snapshot
+        }) {
+            return cached
         }
-
+        
         var processedContent = content
         let footnoteResult = FootnotePreprocessor().process(processedContent)
         processedContent = footnoteResult.processedMarkdown
@@ -18,12 +20,39 @@ struct MarkdownRenderSnapshot {
         let snapshot = MarkdownRenderSnapshot(
             blocks: makeBlocks(from: Array(document.children))
         )
+        await MainActor.run {
+            MarkdownRenderSnapshotCache.shared.setObject(
+                MarkdownRenderSnapshotBox(snapshot: snapshot),
+                forKey: content as NSString
+            )
+        }
+        return snapshot
+    }
+    
+    @MainActor
+    static func parse(_ content: String) -> Self {
+        if let cached = MarkdownRenderSnapshotCache.shared.object(forKey: content as NSString)?.snapshot {
+            return cached
+        }
+        
+        var processedContent = content
+        let footnoteResult = FootnotePreprocessor().process(processedContent)
+        processedContent = footnoteResult.processedMarkdown
+        processedContent = LaTeXPreprocessor.process(processedContent)
+
+        let document = Document(parsing: processedContent)
+        let snapshot = MarkdownRenderSnapshot(
+            blocks: makeBlocks(from: Array(document.children))
+        )
+        
         MarkdownRenderSnapshotCache.shared.setObject(
             MarkdownRenderSnapshotBox(snapshot: snapshot),
             forKey: content as NSString
         )
+        
         return snapshot
     }
+    
 
     private static func makeBlocks(from children: [any Markup]) -> [MarkdownBlockNode] {
         var counts: [MarkdownBlockFingerprint: Int] = [:]
@@ -45,12 +74,12 @@ struct MarkdownRenderSnapshot {
     }
 }
 
-struct MarkdownBlockNode: Identifiable {
+struct MarkdownBlockNode: Identifiable, @unchecked Sendable {
     let id: MarkdownBlockIdentity
     let markup: any Markup
 }
 
-struct MarkdownBlockIdentity: Hashable {
+struct MarkdownBlockIdentity: Hashable, Sendable {
     let kind: String
     let occurrence: Int
     let digest: Int
@@ -97,7 +126,7 @@ private struct MarkdownBlockFingerprint: Hashable {
 }
 
 private final class MarkdownRenderSnapshotCache {
-    static let shared: NSCache<NSString, MarkdownRenderSnapshotBox> = {
+    @MainActor static let shared: NSCache<NSString, MarkdownRenderSnapshotBox> = {
         let cache = NSCache<NSString, MarkdownRenderSnapshotBox>()
         cache.countLimit = 128
         return cache
