@@ -7,62 +7,20 @@
 import SwiftUI
 import Markdown
 
-struct blurModifier: ViewModifier {
-    let state:Bool
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: state ? 8 : 0)
-            .opacity(state ? 0 : 1)
-            .allowsHitTesting(!state)
-    }
-}
-
-extension AnyTransition {
-    static var blur: AnyTransition {
-        .modifier(
-            active: blurModifier(state: true),
-            identity: blurModifier(state: false)
-        )
-    }
-}
-
-private struct IndependentScaleModifier: ViewModifier {
-    let xScale: CGFloat
-    let yScale: CGFloat
-    let anchor: UnitPoint
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(x: xScale, y: yScale, anchor: anchor)
-    }
-}
-
-extension AnyTransition {
-    static func scale(x: CGFloat = 1, y: CGFloat = 1, anchor: UnitPoint = .center) -> AnyTransition {
-        .modifier(
-            active: IndependentScaleModifier(xScale: x, yScale: y, anchor: anchor),
-            identity: IndependentScaleModifier(xScale: 1.0, yScale: 1.0, anchor: anchor)
-        )
-    }
-}
-
-nonisolated(unsafe) let defaultTransition: AnyTransition = .blur.combined(with: .offset(x: -16, y: 48)).combined(with: .scale(x: 1, y: 0.6, anchor: .bottomLeading))
-
 /// Renders a parsed Markdown document to SwiftUI views.
 struct MarkdownRenderer: View {
 
-    let document: Document
+    let snapshot: MarkdownRenderSnapshot
     let theme: MarkdownTheme
     let baseURL: URL?
 
     @Environment(\.markdownLinkHandler) private var linkHandler
 
     var body: some View {
-        VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
-            ForEach(Array(document.children.enumerated()), id: \.offset) { _, child in
-                renderBlock(child)
+        LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+            ForEach(snapshot.blocks) { block in
+                renderBlock(block.markup)
             }
-            .transition(defaultTransition)
         }
         .lineSpacing(theme.paragraphSpacing)
     }
@@ -172,7 +130,7 @@ struct MarkdownRenderer: View {
                 .fill(theme.blockQuoteBorderColor)
                 .frame(width: 4)
 
-            VStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
+            LazyVStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
                 ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
                     renderBlock(child)
                 }
@@ -194,7 +152,7 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderOrderedList(_ list: OrderedList, depth: Int = 0) -> some View {
-        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
+        LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.listItems.enumerated()), id: \.offset) { index, item in
                 renderListItem(item, bullet: "\(index + Int(list.startIndex)).", depth: depth)
             }
@@ -204,7 +162,7 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderUnorderedList(_ list: UnorderedList, depth: Int = 0) -> some View {
-        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
+        LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.listItems.enumerated()), id: \.offset) { _, item in
                 if item.checkbox != nil {
                     renderTaskListItem(item, depth: depth)
@@ -224,7 +182,7 @@ struct MarkdownRenderer: View {
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
-            VStack(alignment: .leading, spacing: theme.listItemSpacing) {
+            LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
                     renderListChildBlock(child, depth: depth)
                 }
@@ -240,7 +198,7 @@ struct MarkdownRenderer: View {
                 .foregroundColor(item.checkbox?.isChecked == true ? theme.linkColor : theme.secondaryTextColor)
                 .frame(width: 20, alignment: .trailing)
 
-            VStack(alignment: .leading, spacing: theme.listItemSpacing) {
+            LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
                     renderListChildBlock(child, depth: depth)
                 }
@@ -264,7 +222,7 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderTable(_ table: Markdown.Table) -> some View {
         let cellArrays = extractTableCells(from: table)
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             // Header row
             if !cellArrays.header.isEmpty {
                 renderTableCellRow(cells: cellArrays.header, isHeader: true)

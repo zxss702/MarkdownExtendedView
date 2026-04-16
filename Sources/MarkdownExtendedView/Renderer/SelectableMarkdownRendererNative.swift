@@ -575,7 +575,7 @@ private final class SelectionModel {
         guard !newCollection.isEqual(to: self.layoutCollection) else { return }
         
         do {
-            try await Task.sleep(nanoseconds: 50_000_000)
+            try await Task.sleep(for: .milliseconds(200))
         } catch {
             return
         }

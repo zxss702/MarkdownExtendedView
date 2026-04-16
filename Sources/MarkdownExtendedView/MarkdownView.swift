@@ -8,172 +8,77 @@
 // Licensed under MIT License
 
 import SwiftUI
-import Markdown
 
 /// A SwiftUI view that renders Markdown content with LaTeX equation support.
-///
-/// Supports GitHub Flavored Markdown (GFM) including:
-/// - Headings, paragraphs, and text formatting (bold, italic, strikethrough)
-/// - Ordered and unordered lists with nesting
-/// - Block quotes and code blocks
-/// - Links and images
-/// - Tables
-/// - Inline LaTeX ($...$) and display LaTeX ($$...$$)
-/// - Optional large-area text selection across block boundaries
-///
-/// ## Example Usage
-///
-/// ```swift
-/// MarkdownView(content: """
-///     ## Quadratic Formula
-///
-///     The solutions to $ax^2 + bx + c = 0$ are:
-///
-///     $$x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$
-///     """)
-/// ```
-///
-/// ## Theming
-///
-/// ```swift
-/// MarkdownView(content: markdownString)
-///     .markdownTheme(.gitHub)
-/// ```
 public struct MarkdownView: View, @MainActor Equatable {
     public static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
         lhs.content == rhs.content && lhs.baseURL == rhs.baseURL
     }
-    
-
-    // MARK: - Properties
 
     private let content: String
     private let baseURL: URL?
 
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.markdownTheme) private var theme
+    @State private var snapshot: MarkdownRenderSnapshot
+    @State private var updateTask: Task<Void, Never>? = nil
 
-    // MARK: - Initialization
-
-    /// Creates a MarkdownView with the specified content.
-    ///
-    /// - Parameters:
-    ///   - content: The Markdown string to render (may include LaTeX equations).
-    ///   - baseURL: Optional base URL for resolving relative links and images.
     public init(_ content: String, baseURL: URL? = nil) {
         self.content = content
         self.baseURL = baseURL
-        
-        var processedContent = content
-
-        // Pre-process footnotes if enabled
-        let footnoteResult = FootnotePreprocessor().process(processedContent)
-        processedContent = footnoteResult.processedMarkdown
-
-        // Pre-process content to handle LaTeX blocks before markdown parsing
-        processedContent = LaTeXPreprocessor.process(processedContent)
-
-        let doc = Document(parsing: processedContent)
-        self._document = State(wrappedValue: doc)
+        _snapshot = State(initialValue: MarkdownRenderSnapshot.parse(content))
     }
 
-    /// Creates a MarkdownView with the specified content.
-    ///
-    /// - Parameters:
-    ///   - content: The Markdown string to render (may include LaTeX equations).
-    ///   - baseURL: Optional base URL for resolving relative links and images.
     public init(content: String, baseURL: URL? = nil) {
-        self.content = content
-        self.baseURL = baseURL
-        
-        var processedContent = content
-
-        // Pre-process footnotes if enabled
-        let footnoteResult = FootnotePreprocessor().process(processedContent)
-        processedContent = footnoteResult.processedMarkdown
-
-        // Pre-process content to handle LaTeX blocks before markdown parsing
-        processedContent = LaTeXPreprocessor.process(processedContent)
-
-        let doc = Document(parsing: processedContent)
-        self._document = State(wrappedValue: doc)
-        
+        self.init(content, baseURL: baseURL)
     }
 
-    // MARK: - Body
-    @State var document: Document
-    @State var updateTask: Task<Void, Error>? = nil
-    
     public var body: some View {
         MarkdownRenderer(
-            document: document,
+            snapshot: snapshot,
             theme: theme,
             baseURL: baseURL
         )
 #if os(macOS) || os(iOS)
         .selectable()
 #endif
-        .contentTransition(.numericText())
-        .onChange(of: content) { oldValue, newValue in
+        .onChange(of: content) { _, newValue in
+            scheduleSnapshotUpdate(for: newValue)
+        }
+        .onDisappear {
             updateTask?.cancel()
-            updateTask = Task.detached {
-                try await Task.sleep(for: .seconds(0.2))
-                try Task.checkCancellation()
-                var processedContent = newValue
-                
-                // Pre-process footnotes if enabled
-                let footnoteResult = FootnotePreprocessor().process(processedContent)
-                processedContent = footnoteResult.processedMarkdown
-                
-                // Pre-process content to handle LaTeX blocks before markdown parsing
-                processedContent = LaTeXPreprocessor.process(processedContent)
-                
-                let doc = Document(parsing: processedContent)
-                await MainActor.run {
-                    withAnimation(.snappy) {
-                        document = doc
-                    }
+            updateTask = nil
+        }
+    }
+
+    private func scheduleSnapshotUpdate(for content: String) {
+        updateTask?.cancel()
+
+        updateTask = Task.detached(priority: .utility) { [content] in
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            let nextSnapshot = MarkdownRenderSnapshot.parse(content)
+
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                withAnimation(.snappy) {
+                    snapshot = nextSnapshot
                 }
+                updateTask = nil
             }
         }
     }
 }
 
-// MARK: - View Modifiers
-
 public extension View {
-    /// Applies a Markdown theme to all ``MarkdownView`` instances in the view hierarchy.
-    ///
-    /// Use this modifier to customize the appearance of Markdown content. The theme
-    /// propagates to all nested views, so you can set it at a parent level.
-    ///
-    /// ```swift
-    /// // Apply a built-in theme
-    /// MarkdownView(content)
-    ///     .markdownTheme(.gitHub)
-    ///
-    /// // Apply a custom theme
-    /// var custom = MarkdownTheme.default
-    /// custom.linkColor = .purple
-    /// MarkdownView(content)
-    ///     .markdownTheme(custom)
-    ///
-    /// // Apply to a container to theme all nested MarkdownViews
-    /// VStack {
-    ///     MarkdownView(intro)
-    ///     MarkdownView(details)
-    /// }
-    /// .markdownTheme(.compact)
-    /// ```
-    ///
-    /// - Parameter theme: The ``MarkdownTheme`` to apply.
-    /// - Returns: A view with the theme applied to the environment.
     func markdownTheme(_ theme: MarkdownTheme) -> some View {
         environment(\.markdownTheme, theme)
     }
 }
-
-// MARK: - Preview
 
 #if DEBUG
 struct MarkdownView_Previews: PreviewProvider {

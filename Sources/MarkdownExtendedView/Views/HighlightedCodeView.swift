@@ -12,23 +12,32 @@ import SwiftUI
 /// each token with the appropriate color from the theme's ``SyntaxColors``.
 public struct HighlightedCodeView: View {
 
-    let code: String
-    let language: String?
-    let theme: MarkdownTheme
-
-    private let highlighter = SyntaxHighlighter()
+    private let theme: MarkdownTheme
+    @State private var lines: [[Token]]
 
     public init(code: String, language: String?, theme: MarkdownTheme) {
-        self.code = code
-        self.language = language
         self.theme = theme
+
+        let normalizedCode = code.trimmingCharacters(in: .newlines)
+        let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
+        let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines
+        let resolvedLines = cachedLines ?? Self.makeHighlightedLines(
+            code: normalizedCode,
+            language: language
+        )
+
+        if cachedLines == nil {
+            HighlightedCodeSnapshotCache.shared.setObject(
+                HighlightedCodeSnapshot(lines: resolvedLines),
+                forKey: cacheKey as NSString
+            )
+        }
+
+        _lines = State(initialValue: resolvedLines)
     }
     
     public var body: some View {
-        let tokens = highlighter.tokenize(code.trimmingCharacters(in: .newlines), language: language)
-        let lines = splitIntoLines(tokens)
-
-        VStack(alignment: .leading, spacing: theme.codeLineSpacing) {
+        LazyVStack(alignment: .leading, spacing: theme.codeLineSpacing) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, lineTokens in
                 lineView(for: lineTokens)
             }
@@ -70,8 +79,17 @@ public struct HighlightedCodeView: View {
         }
     }
 
+    private static func makeHighlightedLines(code: String, language: String?) -> [[Token]] {
+        let tokens = SyntaxHighlighter().tokenize(code, language: language)
+        return splitIntoLines(tokens)
+    }
+
+    private static func cacheKey(for code: String, language: String?) -> String {
+        "\(language ?? "plain")::\(code)"
+    }
+
     /// Splits tokens into lines, preserving token structure.
-    private func splitIntoLines(_ tokens: [Token]) -> [[Token]] {
+    private static func splitIntoLines(_ tokens: [Token]) -> [[Token]] {
         var lines: [[Token]] = [[]]
 
         for token in tokens {
@@ -87,6 +105,22 @@ public struct HighlightedCodeView: View {
         }
 
         return lines
+    }
+}
+
+private final class HighlightedCodeSnapshotCache {
+    static let shared: NSCache<NSString, HighlightedCodeSnapshot> = {
+        let cache = NSCache<NSString, HighlightedCodeSnapshot>()
+        cache.countLimit = 128
+        return cache
+    }()
+}
+
+private final class HighlightedCodeSnapshot: NSObject {
+    let lines: [[Token]]
+
+    init(lines: [[Token]]) {
+        self.lines = lines
     }
 }
 
