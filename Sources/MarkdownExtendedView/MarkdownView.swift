@@ -20,6 +20,7 @@ public struct MarkdownView: View, @MainActor Equatable {
 
     @Environment(\.markdownTheme) private var theme
     @State private var snapshot: MarkdownRenderSnapshot
+    @State private var measuredWidth: CGFloat = 0
     @State private var updateTask: Task<Void, Never>? = nil
 
     public init(_ content: String, baseURL: URL? = nil) {
@@ -33,44 +34,82 @@ public struct MarkdownView: View, @MainActor Equatable {
     }
 
     public var body: some View {
-        MarkdownRenderer(
-            snapshot: snapshot,
-            theme: theme,
-            baseURL: baseURL
-        )
+        MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
+            .frame(height: snapshot.estimatedHeight)
+            .background(widthReader)
 #if os(macOS) || os(iOS)
-        .selectable()
+            .selectable()
 #endif
-        .onChange(of: content) { _, newValue in
-            scheduleSnapshotUpdate(for: newValue)
-        }
-        .onDisappear {
-            updateTask?.cancel()
-            updateTask = nil
+            .onPreferenceChange(MarkdownViewWidthPreferenceKey.self, perform: updateMeasuredWidth(_:))
+            .onAppear(perform: refreshLayoutSnapshot)
+            .onChange(of: content) { _, newValue in
+                scheduleSnapshotUpdate(for: newValue, debounce: true)
+            }
+            .onChange(of: theme.layoutSignature) { _, _ in
+                refreshLayoutSnapshot()
+            }
+            .onDisappear {
+                updateTask?.cancel()
+                updateTask = nil
+            }
+    }
+
+    private var widthReader: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: MarkdownViewWidthPreferenceKey.self,
+                value: proxy.size.width
+            )
         }
     }
 
-    private func scheduleSnapshotUpdate(for content: String) {
+    private func updateMeasuredWidth(_ width: CGFloat) {
+        let roundedWidth = MarkdownRenderSnapshot.roundedWidth(width)
+        guard abs(measuredWidth - roundedWidth) > 0.5 else { return }
+        measuredWidth = roundedWidth
+        refreshLayoutSnapshot()
+    }
+
+    private func refreshLayoutSnapshot() {
+        scheduleSnapshotUpdate(for: content, debounce: false)
+    }
+
+    private func scheduleSnapshotUpdate(for content: String, debounce: Bool) {
         updateTask?.cancel()
+        let width = measuredWidth
+        let theme = theme
 
         updateTask = Task.detached(priority: .utility) { [content] in
-            do {
-                try await Task.sleep(for: .milliseconds(500))
-            } catch {
-                return
+            if debounce {
+                do {
+                    try await Task.sleep(for: .milliseconds(500))
+                } catch {
+                    return
+                }
             }
 
             guard !Task.isCancelled else { return }
-            let nextSnapshot = await MarkdownRenderSnapshot.parse(content)
+            let nextSnapshot: MarkdownRenderSnapshot
+            if width > 0 {
+                nextSnapshot = await MarkdownRenderSnapshot.parse(content, width: width, theme: theme)
+            } else {
+                nextSnapshot = await MarkdownRenderSnapshot.parse(content)
+            }
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }
-                withAnimation(.snappy) {
-                    snapshot = nextSnapshot
-                }
+                snapshot = nextSnapshot
                 updateTask = nil
             }
         }
+    }
+}
+
+private struct MarkdownViewWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
