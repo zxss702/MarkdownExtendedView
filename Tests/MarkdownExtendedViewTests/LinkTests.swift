@@ -91,23 +91,6 @@ final class LinkTests: XCTestCase {
         XCTAssertTrue(foundLink, "Should find email autolink")
     }
 
-    // MARK: - Feature Flag Tests
-
-    func testLinksFlagDisabledByDefault() {
-        let features = MarkdownFeatures.none
-        XCTAssertFalse(features.contains(.links))
-    }
-
-    func testLinksCanBeEnabled() {
-        let features: MarkdownFeatures = .links
-        XCTAssertTrue(features.contains(.links))
-    }
-
-    func testLinksInAllFeatures() {
-        let features = MarkdownFeatures.all
-        XCTAssertTrue(features.contains(.links))
-    }
-
     // MARK: - URL Validation Tests
 
     func testValidHTTPSURL() {

@@ -173,20 +173,4 @@ final class FootnoteTests: XCTestCase {
         XCTAssertTrue(result.processedMarkdown.contains("³"))
     }
 
-    // MARK: - Feature Flag Tests
-
-    func testFootnotesDisabledByDefault() {
-        let features = MarkdownFeatures.none
-        XCTAssertFalse(features.contains(.footnotes))
-    }
-
-    func testFootnotesCanBeEnabled() {
-        let features: MarkdownFeatures = .footnotes
-        XCTAssertTrue(features.contains(.footnotes))
-    }
-
-    func testFootnotesInAllFeatures() {
-        let features = MarkdownFeatures.all
-        XCTAssertTrue(features.contains(.footnotes))
-    }
 }

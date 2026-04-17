@@ -4,155 +4,24 @@
 //  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
 
-import Foundation
 import SwiftUI
 
-/// Feature flags for enabling opt-in Markdown capabilities.
-///
-/// By default, all features that require network access or external resources
-/// are disabled. Use the ``SwiftUI/View/markdownFeatures(_:)`` modifier to
-/// enable specific features.
-///
-/// ## Example
-///
-/// ```swift
-/// // Enable clickable links
-/// MarkdownView(content)
-///     .markdownFeatures(.links)
-///
-/// // Enable multiple features
-/// MarkdownView(content)
-///     .markdownFeatures([.links, .images])
-/// ```
-///
-/// ## Privacy
-///
-/// Features like ``links`` and ``images`` are disabled by default to respect
-/// user privacy. When enabled:
-/// - **Links**: On iOS, opens URLs in an in-app browser (SFSafariViewController).
-///   On macOS, opens in the default browser.
-/// - **Images**: Loads images from remote URLs using AsyncImage.
-/// - **Mermaid**: Renders diagrams using a WebView.
-public struct MarkdownFeatures: OptionSet, Sendable {
-
-    public let rawValue: Int
-
-    public init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
-
-    // MARK: - Feature Flags
-
-    /// Enable clickable links.
-    ///
-    /// When enabled, `[text](url)` links become tappable:
-    /// - **iOS**: Opens in SFSafariViewController (in-app browser)
-    /// - **macOS**: Opens in the default browser
-    ///
-    /// Use ``SwiftUI/View/onLinkTap(_:)`` for custom link handling.
-    public static let links = MarkdownFeatures(rawValue: 1 << 0)
-
-    /// Enable image loading from URLs.
-    ///
-    /// When enabled, `![alt](url)` images are loaded using AsyncImage.
-    /// Supports both remote (https://) and local (file://) URLs.
-    public static let images = MarkdownFeatures(rawValue: 1 << 1)
-
-    /// Enable Mermaid diagram rendering.
-    ///
-    /// When enabled, ```mermaid code blocks are rendered as diagrams
-    /// using a WKWebView. This requires loading the Mermaid.js library.
-    public static let mermaid = MarkdownFeatures(rawValue: 1 << 2)
-
-    /// Enable syntax highlighting for code blocks.
-    ///
-    /// When enabled, code blocks with language specifiers (e.g., ```swift)
-    /// are rendered with syntax highlighting for keywords, strings, comments,
-    /// and other language constructs.
-    public static let syntaxHighlighting = MarkdownFeatures(rawValue: 1 << 3)
-
-    /// Enable footnote processing.
-    ///
-    /// When enabled, footnote syntax (`[^1]` and `[^1]: definition`) is
-    /// processed and rendered as numbered superscripts with a footnotes
-    /// section at the end of the document.
-    public static let footnotes = MarkdownFeatures(rawValue: 1 << 4)
-
-    /// Enable large-area text selection across block boundaries.
-    ///
-    /// When enabled, ``MarkdownView`` switches to a dual-layer rendering strategy:
-    /// - On iOS 18+ and macOS 15+, a layout-driven native interaction overlay provides
-    ///   accurate cross-paragraph selection geometry
-    /// - The regular rich renderer remains visible on top for visual fidelity
-    ///
-    /// This mode prioritizes text selection interactions over inline gestures.
-    public static let textSelection = MarkdownFeatures(rawValue: 1 << 5)
-
-    // MARK: - Convenience
-
-    /// No features enabled (default).
-    ///
-    /// All opt-in features are disabled. This is the default state.
-    public static let none: MarkdownFeatures = []
-
-    /// All features enabled.
-    ///
-    /// Enables links, images, mermaid diagrams, syntax highlighting, footnotes,
-    /// and large-area text selection.
-    public static let all: MarkdownFeatures = [.links, .images, .mermaid, .syntaxHighlighting, .footnotes, .textSelection]
-}
-
-// MARK: - Environment Keys
-
-/// Environment key for enabled Markdown features.
-private struct MarkdownFeaturesKey: EnvironmentKey {
-    static let defaultValue: MarkdownFeatures = .none
-}
-
-/// Environment key for custom link tap handler.
+/// Environment key for custom link tap handling.
 private struct MarkdownLinkHandlerKey: EnvironmentKey {
     static let defaultValue: (@Sendable (URL) -> Void)? = nil
 }
 
 public extension EnvironmentValues {
     /// A custom handler for link taps in ``MarkdownView``.
-    ///
-    /// When set, this handler is called instead of the default link behavior.
-    /// Use the ``SwiftUI/View/onLinkTap(_:)`` modifier to set this:
-    ///
-    /// ```swift
-    /// MarkdownView(content)
-    ///     .markdownFeatures(.links)
-    ///     .onLinkTap { url in
-    ///         // Custom handling
-    ///     }
-    /// ```
     var markdownLinkHandler: (@Sendable (URL) -> Void)? {
         get { self[MarkdownLinkHandlerKey.self] }
         set { self[MarkdownLinkHandlerKey.self] = newValue }
     }
 }
 
-// MARK: - View Modifiers
-
 public extension View {
 
     /// Sets a custom handler for link taps in Markdown content.
-    ///
-    /// When a link is tapped and the ``MarkdownFeatures/links`` feature is enabled,
-    /// this handler is called instead of the default behavior (opening in browser).
-    ///
-    /// ```swift
-    /// MarkdownView(content)
-    ///     .markdownFeatures(.links)
-    ///     .onLinkTap { url in
-    ///         // Custom link handling
-    ///         print("User tapped: \(url)")
-    ///     }
-    /// ```
-    ///
-    /// - Parameter handler: A closure that receives the tapped URL.
-    /// - Returns: A view with the custom link handler set.
     func onLinkTap(_ handler: @escaping @Sendable (URL) -> Void) -> some View {
         environment(\.markdownLinkHandler, handler)
     }

@@ -58,23 +58,6 @@ final class ImageTests: XCTestCase {
         XCTAssertEqual(image.plainText, "")
     }
 
-    // MARK: - Feature Flag Tests
-
-    func testImagesFlagDisabledByDefault() {
-        let features = MarkdownFeatures.none
-        XCTAssertFalse(features.contains(.images))
-    }
-
-    func testImagesCanBeEnabled() {
-        let features: MarkdownFeatures = .images
-        XCTAssertTrue(features.contains(.images))
-    }
-
-    func testImagesInAllFeatures() {
-        let features = MarkdownFeatures.all
-        XCTAssertTrue(features.contains(.images))
-    }
-
     // MARK: - URL Validation Tests
 
     func testValidImageURL() {

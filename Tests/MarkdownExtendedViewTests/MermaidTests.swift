@@ -88,23 +88,6 @@ final class MermaidTests: XCTestCase {
         XCTAssertTrue(codeBlock.code.contains("classDiagram"))
     }
 
-    // MARK: - Feature Flag Tests
-
-    func testMermaidFlagDisabledByDefault() {
-        let features = MarkdownFeatures.none
-        XCTAssertFalse(features.contains(.mermaid))
-    }
-
-    func testMermaidCanBeEnabled() {
-        let features: MarkdownFeatures = .mermaid
-        XCTAssertTrue(features.contains(.mermaid))
-    }
-
-    func testMermaidInAllFeatures() {
-        let features = MarkdownFeatures.all
-        XCTAssertTrue(features.contains(.mermaid))
-    }
-
     // MARK: - Helper Function Tests
 
     func testIsMermaidCodeBlock() {

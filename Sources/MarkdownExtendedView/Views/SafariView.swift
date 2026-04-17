@@ -10,8 +10,8 @@ import SafariServices
 
 /// A SwiftUI wrapper for SFSafariViewController to display web content in-app.
 ///
-/// This view is used internally by MarkdownView when the `.links` feature is enabled
-/// to open links in an in-app browser rather than switching to Safari.
+/// This view is used internally by MarkdownView to open links in an in-app browser
+/// rather than switching to Safari.
 struct SafariView: UIViewControllerRepresentable {
 
     let url: URL

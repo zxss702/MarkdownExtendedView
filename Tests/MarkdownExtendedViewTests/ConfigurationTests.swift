@@ -11,23 +11,10 @@ import SwiftUI
 @MainActor
 final class ConfigurationTests: XCTestCase {
 
-    // MARK: - Environment Default Values
-
-    func testFeaturesDefaultIsNone() {
-        // The default value for markdownFeatures should be .none
-        let defaultFeatures = MarkdownFeatures.none
-        XCTAssertTrue(defaultFeatures.isEmpty)
-    }
-
     func testLinkHandlerDefaultIsNil() {
-        // The default value for link handler should be nil
-        // We can't directly test EnvironmentValues without a view,
-        // but we can verify the type allows nil
         let handler: ((URL) -> Void)? = nil
         XCTAssertNil(handler)
     }
-
-    // MARK: - LinkHandler Type
 
     func testLinkHandlerCanStoreCallback() {
         var callbackInvoked = false
@@ -63,66 +50,30 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(urls[1], url2)
     }
 
-    // MARK: - Features Contains Check
-
-    func testFeaturesContainsLinks() {
-        let features: MarkdownFeatures = [.links, .images]
-        XCTAssertTrue(features.contains(.links))
-    }
-
-    func testFeaturesDoesNotContainMermaid() {
-        let features: MarkdownFeatures = [.links, .images]
-        XCTAssertFalse(features.contains(.mermaid))
-    }
-
-    // MARK: - ImageHandler Type (for future use)
-
     func testImagePlaceholderTypeExists() {
-        // Verify we can create an optional AnyView for placeholder
         let placeholder: AnyView? = nil
         XCTAssertNil(placeholder)
     }
 
-    // MARK: - View Modifier Tests
-
-    func testMarkdownFeaturesModifierExists() {
-        // Verify the markdownFeatures modifier can be called
+    func testMarkdownThemeModifierExists() {
         let view = Text("Test")
-        let modifiedView = view.markdownFeatures(.links)
-        // If this compiles, the modifier exists
-        XCTAssertNotNil(modifiedView)
-    }
-
-    func testMarkdownFeaturesModifierWithMultipleFlags() {
-        let view = Text("Test")
-        let modifiedView = view.markdownFeatures([.links, .images])
+        let modifiedView = view.markdownTheme(.gitHub)
         XCTAssertNotNil(modifiedView)
     }
 
     func testOnLinkTapModifierExists() {
-        // Verify the onLinkTap modifier can be called
         let view = Text("Test")
         let modifiedView = view.onLinkTap { _ in }
         XCTAssertNotNil(modifiedView)
     }
 
     func testModifiersCanBeChained() {
-        // Verify modifiers can be chained together
         let view = Text("Test")
         let modifiedView = view
-            .markdownFeatures([.links, .images])
+            .markdownTheme(.compact)
             .onLinkTap { url in
                 print("Tapped: \(url)")
             }
-        XCTAssertNotNil(modifiedView)
-    }
-
-    func testMarkdownFeaturesWithTheme() {
-        // Verify features can be combined with theme
-        let view = Text("Test")
-        let modifiedView = view
-            .markdownTheme(.gitHub)
-            .markdownFeatures(.links)
         XCTAssertNotNil(modifiedView)
     }
 }

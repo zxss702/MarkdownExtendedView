@@ -80,23 +80,6 @@ final class SyntaxHighlightingTests: XCTestCase {
         XCTAssertEqual(codeBlock.language, "javascript")
     }
 
-    // MARK: - Feature Flag Tests
-
-    func testSyntaxHighlightingFlagDisabledByDefault() {
-        let features = MarkdownFeatures.none
-        XCTAssertFalse(features.contains(.syntaxHighlighting))
-    }
-
-    func testSyntaxHighlightingCanBeEnabled() {
-        let features: MarkdownFeatures = .syntaxHighlighting
-        XCTAssertTrue(features.contains(.syntaxHighlighting))
-    }
-
-    func testSyntaxHighlightingInAllFeatures() {
-        let features = MarkdownFeatures.all
-        XCTAssertTrue(features.contains(.syntaxHighlighting))
-    }
-
     // MARK: - Highlighter Tests
 
     func testSyntaxHighlighterExists() {
