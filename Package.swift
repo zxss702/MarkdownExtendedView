@@ -19,7 +19,7 @@ let package = Package(
         // Apple's official Markdown parser (CommonMark + GFM extensions)
         .package(url: "https://github.com/swiftlang/swift-markdown.git", branch: "main"),
         // Extended LaTeX rendering for SwiftUI (fork of SwiftMath with additional symbol coverage)
-        .package(url: "https://github.com/ChrisGVE/ExtendedSwiftMath.git", from: "2.0.1"),
+        .package(url: "https://github.com/zxss702/ExtendedSwiftMath.git", branch: "main")
     ],
     targets: [
         .target(
