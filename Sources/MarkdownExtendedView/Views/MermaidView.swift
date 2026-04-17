@@ -18,9 +18,6 @@ import AppKit
 private let mermaidSizeMessageName = "mermaidSize"
 
 /// A view that renders Mermaid diagrams using a WebView.
-///
-/// When the `.mermaid` feature is enabled, code blocks with language "mermaid"
-/// are rendered using this view, which embeds the Mermaid.js library.
 struct MermaidView: View {
 
     let code: String
@@ -29,11 +26,23 @@ struct MermaidView: View {
     @State private var contentSize: CGSize = .zero
 
     var body: some View {
-        MermaidWebView(code: code, contentSize: $contentSize)
-            .frame(maxWidth: contentSize.width > 0 ? contentSize.width : .infinity)
-            .frame(height: contentSize.height > 0 ? contentSize.height : nil)
-            .background(theme.codeBackgroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+        GeometryReader { proxy in
+            MermaidWebView(code: code, fontSize: theme.mermaidFontSize, contentSize: $contentSize)
+                .frame(
+                    width: resolvedWidth(for: proxy.size.width),
+                    height: MarkdownLayoutMetrics.fixedMermaidHeight
+                )
+                .background(theme.codeBackgroundColor)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(height: MarkdownLayoutMetrics.fixedMermaidHeight)
+    }
+
+    private func resolvedWidth(for availableWidth: CGFloat) -> CGFloat {
+        let clampedAvailableWidth = max(availableWidth, 1)
+        guard contentSize.width > 0 else { return clampedAvailableWidth }
+        return min(contentSize.width, clampedAvailableWidth)
     }
 }
 
@@ -41,21 +50,20 @@ struct MermaidView: View {
 
 #if canImport(UIKit)
 
-/// UIKit implementation of the Mermaid WebView.
 struct MermaidWebView: UIViewRepresentable {
 
     let code: String
+    let fontSize: CGFloat
     @Binding var contentSize: CGSize
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+        Coordinator(contentSize: $contentSize)
     }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(context.coordinator, name: mermaidSizeMessageName)
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
         webView.scrollView.showsVerticalScrollIndicator = false
         webView.scrollView.showsHorizontalScrollIndicator = false
         webView.scrollView.bounces = false
@@ -69,194 +77,105 @@ struct MermaidWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.lastLoadedCode != code else { return }
-        context.coordinator.lastLoadedCode = code
-        let html = generateHTML(for: code)
-        webView.loadHTMLString(html, baseURL: Bundle.module.resourceURL)
-    }
-
-    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var parent: MermaidWebView
-        var lastLoadedCode: String?
-
-        init(_ parent: MermaidWebView) {
-            self.parent = parent
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Get the content size after rendering
-            webView.evaluateJavaScript(
-                """
-                (() => {
-                    const root = document.getElementById('mermaid-root');
-                    const svg = root ? root.querySelector('svg') : null;
-                    if (!svg) {
-                        return {width: 0, height: 0};
-                    }
-                    const bodyStyle = window.getComputedStyle(document.body);
-                    const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
-                    const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                    const bodyPaddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
-                    const bodyPaddingRight = parseFloat(bodyStyle.paddingRight) || 0;
-                    const rect = svg.getBoundingClientRect();
-                    const contentHeight = rect.height + bodyPaddingTop + bodyPaddingBottom;
-                    const contentWidth = rect.width + bodyPaddingLeft + bodyPaddingRight;
-                    return {
-                        width: Math.max(Math.ceil(contentWidth), 50),
-                        height: Math.max(Math.ceil(contentHeight), 50)
-                    };
-                })()
-                """
-            ) { [weak self] result, _ in
-                self?.updateSize(from: result)
-            }
-        }
-
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == mermaidSizeMessageName else { return }
-            updateSize(from: message.body)
-        }
-
-        private func updateSize(from value: Any?) {
-            guard let dict = value as? [String: Any],
-                  let width = dict["width"] as? NSNumber,
-                  let height = dict["height"] as? NSNumber else {
-                return
-            }
-            let w = CGFloat(truncating: width)
-            let h = CGFloat(truncating: height)
-
-            DispatchQueue.main.async {
-                let newSize = CGSize(width: max(w, 0), height: max(h, 0))
-                guard abs(self.parent.contentSize.width - newSize.width) > 0.5 || 
-                      abs(self.parent.contentSize.height - newSize.height) > 0.5 else { return }
-                self.parent.contentSize = newSize
-            }
-        }
+        let payload = Payload(code: code, fontSize: fontSize)
+        guard context.coordinator.lastPayload != payload else { return }
+        context.coordinator.lastPayload = payload
+        webView.loadHTMLString(generateHTML(for: code, fontSize: fontSize), baseURL: Bundle.module.resourceURL)
     }
 }
 
 #elseif canImport(AppKit)
 
-/// AppKit implementation of the Mermaid WebView.
 struct MermaidWebView: NSViewRepresentable {
 
     let code: String
+    let fontSize: CGFloat
     @Binding var contentSize: CGSize
-    
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(self)
+        Coordinator(contentSize: $contentSize)
     }
-    
+
     func makeNSView(context: Context) -> CustomWKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(context.coordinator, name: mermaidSizeMessageName)
         let webView = CustomWKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
-        
-        // Disable internal scrolling on macOS WKWebView to pass scroll events to SwiftUI parent
-        if let scrollView = webView.enclosingScrollView {
-            scrollView.hasVerticalScroller = false
-            scrollView.hasHorizontalScroller = false
-            scrollView.scrollsDynamically = false
-        }
-        
         webView.setValue(false, forKey: "drawsBackground")
+
         return webView
     }
 
     static func dismantleNSView(_ webView: CustomWKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: mermaidSizeMessageName)
     }
-    
+
     func updateNSView(_ webView: CustomWKWebView, context: Context) {
-        guard context.coordinator.lastLoadedCode != code else { return }
-        context.coordinator.lastLoadedCode = code
-        let html = generateHTML(for: code)
-        webView.loadHTMLString(html, baseURL: Bundle.module.resourceURL)
+        let payload = Payload(code: code, fontSize: fontSize)
+        guard context.coordinator.lastPayload != payload else { return }
+        context.coordinator.lastPayload = payload
+        webView.loadHTMLString(generateHTML(for: code, fontSize: fontSize), baseURL: Bundle.module.resourceURL)
     }
 
-    class CustomWKWebView: WKWebView {
-        // macOS AppKit: Bypass vertical scrolling entirely to parent view
+    final class CustomWKWebView: WKWebView {
         override func scrollWheel(with event: NSEvent) {
             nextResponder?.scrollWheel(with: event)
             super.scrollWheel(with: event)
-        }
-    }
-
-    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var parent: MermaidWebView
-        var lastLoadedCode: String?
-
-        init(_ parent: MermaidWebView) {
-            self.parent = parent
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Get the content size after rendering
-            webView.evaluateJavaScript(
-                """
-                (() => {
-                    const root = document.getElementById('mermaid-root');
-                    const svg = root ? root.querySelector('svg') : null;
-                    if (!svg) {
-                        return {width: 0, height: 0};
-                    }
-                    const bodyStyle = window.getComputedStyle(document.body);
-                    const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
-                    const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                    const bodyPaddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
-                    const bodyPaddingRight = parseFloat(bodyStyle.paddingRight) || 0;
-                    const rect = svg.getBoundingClientRect();
-                    const contentHeight = rect.height + bodyPaddingTop + bodyPaddingBottom;
-                    const contentWidth = rect.width + bodyPaddingLeft + bodyPaddingRight;
-                    return {
-                        width: Math.max(Math.ceil(contentWidth), 50),
-                        height: Math.max(Math.ceil(contentHeight), 50)
-                    };
-                })()
-                """
-            ) { [weak self] result, _ in
-                self?.updateSize(from: result)
-            }
-        }
-
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == mermaidSizeMessageName else { return }
-            updateSize(from: message.body)
-        }
-
-        private func updateSize(from value: Any?) {
-            guard let dict = value as? [String: Any],
-                  let width = dict["width"] as? NSNumber,
-                  let height = dict["height"] as? NSNumber else {
-                return
-            }
-            let w = CGFloat(truncating: width)
-            let h = CGFloat(truncating: height)
-
-            DispatchQueue.main.async {
-                let newSize = CGSize(width: max(w, 0), height: max(h, 0))
-                guard abs(self.parent.contentSize.width - newSize.width) > 0.5 || 
-                      abs(self.parent.contentSize.height - newSize.height) > 0.5 else { return }
-                self.parent.contentSize = newSize
-            }
         }
     }
 }
 
 #endif
 
+struct Payload: Equatable {
+    let code: String
+    let fontSize: CGFloat
+}
+
+final class Coordinator: NSObject, WKNavigationDelegate {
+    private let contentSize: Binding<CGSize>
+    var lastPayload: Payload?
+
+    init(contentSize: Binding<CGSize>) {
+        self.contentSize = contentSize
+    }
+}
+
+extension Coordinator: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == mermaidSizeMessageName,
+              let value = message.body as? [String: Any],
+              let width = value["width"] as? NSNumber,
+              let height = value["height"] as? NSNumber else {
+            return
+        }
+
+        let newSize = CGSize(
+            width: max(CGFloat(truncating: width), 1),
+            height: max(CGFloat(truncating: height), 1)
+        )
+
+        DispatchQueue.main.async {
+            guard abs(self.contentSize.wrappedValue.width - newSize.width) > 0.5 ||
+                    abs(self.contentSize.wrappedValue.height - newSize.height) > 0.5 else {
+                return
+            }
+            self.contentSize.wrappedValue = newSize
+        }
+    }
+}
+
 // MARK: - HTML Generation
 
 /// Generates the HTML document for rendering a Mermaid diagram.
-private func generateHTML(for code: String) -> String {
-    // Escape the code for use in HTML/JavaScript
+private func generateHTML(for code: String, fontSize: CGFloat) -> String {
     let escapedCode = code
         .replacingOccurrences(of: "\\", with: "\\\\")
         .replacingOccurrences(of: "`", with: "\\`")
         .replacingOccurrences(of: "$", with: "\\$")
         .replacingOccurrences(of: "</script>", with: "<\\/script>", options: .caseInsensitive, range: nil)
+
+    let cssFontSize = Int(fontSize.rounded())
 
     return """
     <!DOCTYPE html>
@@ -271,41 +190,50 @@ private func generateHTML(for code: String) -> String {
                 padding: 0;
                 box-sizing: border-box;
             }
-            html {
-                overflow-x: auto;
-                overflow-y: hidden;
-                overscroll-behavior-y: none;
+            html, body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                overscroll-behavior: none;
+                background: transparent;
             }
             body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                padding: 16px;
-                margin: 0;
-                background: transparent;
-                display: inline-block;
-                min-width: 100%;
-                min-height: 100vh;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                padding: 12px 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
             #mermaid-root {
-                width: max-content;
-                min-width: 100%;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
             }
             #mermaid-root svg {
                 display: block;
+                max-width: 100%;
+                max-height: 100%;
+                width: auto !important;
+                height: auto !important;
+            }
+            .mermaid-error {
+                width: 100%;
+                color: rgba(60, 60, 67, 0.85);
+                font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+                white-space: pre-wrap;
+                word-break: break-word;
             }
         </style>
     </head>
     <body>
         <div id="mermaid-root"></div>
         <script>
-            // Intercept vertical wheel scrolling and prevent WebView from consuming it,
-            // allowing the event to bubble up to the native macOS/iOS ScrollView.
             window.addEventListener('wheel', (e) => {
                 if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                    // It's a vertical scroll. Prevent default WebView scroll action.
                     e.preventDefault();
-                    // We don't propagate manually in WKWebView by default, 
-                    // preventDefault on body/html is enough to let AppKit/UIKit know 
-                    // the scroll wasn't consumed by the web content block.
                 }
             }, { passive: false });
 
@@ -317,22 +245,85 @@ private func generateHTML(for code: String) -> String {
                 suppressErrorRendering: true,
                 theme: 'neutral',
                 themeVariables: {
-                    fontSize: '14px'
+                    fontSize: '\(cssFontSize)px'
                 },
                 securityLevel: 'loose',
                 flowchart: {
-                    useMaxWidth: false,
+                    useMaxWidth: true,
                     htmlLabels: true
                 },
                 sequence: {
-                    useMaxWidth: false
+                    useMaxWidth: true
                 }
             });
+
+            function fitSVG() {
+                const root = document.getElementById('mermaid-root');
+                const svg = root ? root.querySelector('svg') : null;
+                if (!svg) {
+                    return;
+                }
+
+                svg.style.maxWidth = '100%';
+                svg.style.maxHeight = '100%';
+                svg.style.width = 'auto';
+                svg.style.height = 'auto';
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            }
+
+            function reportNaturalSize() {
+                const root = document.getElementById('mermaid-root');
+                const svg = root ? root.querySelector('svg') : null;
+                if (!svg) {
+                    return;
+                }
+
+                const bodyStyle = window.getComputedStyle(document.body);
+                const paddingX = (parseFloat(bodyStyle.paddingLeft) || 0) + (parseFloat(bodyStyle.paddingRight) || 0);
+                const paddingY = (parseFloat(bodyStyle.paddingTop) || 0) + (parseFloat(bodyStyle.paddingBottom) || 0);
+
+                let width = 0;
+                let height = 0;
+
+                const viewBox = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
+                if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+                    width = viewBox.width;
+                    height = viewBox.height;
+                } else {
+                    const widthAttr = parseFloat(svg.getAttribute('width') || '0');
+                    const heightAttr = parseFloat(svg.getAttribute('height') || '0');
+                    if (widthAttr > 0 && heightAttr > 0) {
+                        width = widthAttr;
+                        height = heightAttr;
+                    }
+                }
+
+                if (width <= 0 || height <= 0) {
+                    const rect = svg.getBoundingClientRect();
+                    width = rect.width;
+                    height = rect.height;
+                }
+
+                const availableHeight = Math.max(root.clientHeight - paddingY, 1);
+                const scale = height > 0 ? Math.min(1, availableHeight / height) : 1;
+                const fittedWidth = Math.ceil(width * scale + paddingX);
+                const fittedHeight = Math.ceil(height * scale + paddingY);
+
+                if (
+                    window.webkit &&
+                    window.webkit.messageHandlers &&
+                    window.webkit.messageHandlers.\(mermaidSizeMessageName)
+                ) {
+                    window.webkit.messageHandlers.\(mermaidSizeMessageName).postMessage({
+                        width: fittedWidth,
+                        height: fittedHeight
+                    });
+                }
+            }
 
             async function renderMermaidSafely() {
                 const root = document.getElementById('mermaid-root');
                 if (!root) {
-                    reportSize();
                     return;
                 }
 
@@ -351,56 +342,21 @@ private func generateHTML(for code: String) -> String {
                     if (typeof result.bindFunctions === 'function') {
                         result.bindFunctions(root);
                     }
-                } catch (_) {
-                    root.innerHTML = '';
+                    fitSVG();
+                    reportNaturalSize();
+                } catch (error) {
+                    const message = error && error.message ? error.message : String(error);
+                    root.innerHTML = `<pre class="mermaid-error">${message}</pre>`;
                 }
-
-                refreshLayout();
-            }
-
-            function reportSize() {
-                const root = document.getElementById('mermaid-root');
-                const svg = root ? root.querySelector('svg') : null;
-                let height = 0;
-                let width = 0;
-
-                if (svg) {
-                    const bodyStyle = window.getComputedStyle(document.body);
-                    const bodyPaddingTop = parseFloat(bodyStyle.paddingTop) || 0;
-                    const bodyPaddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
-                    const bodyPaddingLeft = parseFloat(bodyStyle.paddingLeft) || 0;
-                    const bodyPaddingRight = parseFloat(bodyStyle.paddingRight) || 0;
-                    const rect = svg.getBoundingClientRect();
-                    const contentHeight = rect.height + bodyPaddingTop + bodyPaddingBottom;
-                    const contentWidth = rect.width + bodyPaddingLeft + bodyPaddingRight;
-                    height = Math.max(Math.ceil(contentHeight), 50);
-                    width = Math.max(Math.ceil(contentWidth), 50);
-                }
-
-                if (
-                    window.webkit &&
-                    window.webkit.messageHandlers &&
-                    window.webkit.messageHandlers.\(mermaidSizeMessageName)
-                ) {
-                    window.webkit.messageHandlers.\(mermaidSizeMessageName).postMessage({width: width, height: height});
-                }
-            }
-
-            function refreshLayout() {
-                reportSize();
             }
 
             window.addEventListener('load', () => {
                 renderMermaidSafely();
-                refreshLayout();
-                setTimeout(refreshLayout, 0);
-                setTimeout(refreshLayout, 80);
             });
 
             window.addEventListener('resize', () => {
-                refreshLayout();
-                requestAnimationFrame(refreshLayout);
-                setTimeout(refreshLayout, 80);
+                fitSVG();
+                reportNaturalSize();
             });
         </script>
     </body>

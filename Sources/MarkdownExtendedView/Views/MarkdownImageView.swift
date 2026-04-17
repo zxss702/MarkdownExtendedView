@@ -8,9 +8,6 @@ import SwiftUI
 import Markdown
 
 /// A view that displays an image from a markdown Image node.
-///
-/// When the `.images` feature is enabled, this view loads and displays
-/// images using AsyncImage. When disabled, it shows the alt text.
 struct MarkdownImageView: View {
 
     let image: Markdown.Image
@@ -25,15 +22,25 @@ struct MarkdownImageView: View {
                     loadedImage
                         .resizable()
                         .scaledToFit()
+                        .frame(
+                            width: MarkdownLayoutMetrics.fixedImageSize.width,
+                            height: MarkdownLayoutMetrics.fixedImageSize.height
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .accessibilityLabel(image.plainText)
                 default:
                     Color.white
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .frame(width: 320, height: 320)
+                        .frame(
+                            width: MarkdownLayoutMetrics.fixedImageSize.width,
+                            height: MarkdownLayoutMetrics.fixedImageSize.height
+                        )
                 }
             }
-            .frame(height: 320)
+            .frame(
+                width: MarkdownLayoutMetrics.fixedImageSize.width,
+                height: MarkdownLayoutMetrics.fixedImageSize.height
+            )
         } else {
             altTextView
         }
@@ -42,7 +49,7 @@ struct MarkdownImageView: View {
     /// The alt text fallback when images are disabled or unavailable.
     private var altTextView: some View {
         Text("[\(image.plainText)]")
-            .font(theme.bodyFont)
+            .font(theme.bodySwiftUIFont)
             .foregroundColor(theme.secondaryTextColor)
     }
 
