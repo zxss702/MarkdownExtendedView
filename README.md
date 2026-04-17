@@ -22,9 +22,8 @@
 - 使用 AsyncImage 进行**远程图片加载**
 - 支持 **13+ 种编程语言的语法高亮**
 - 通过内嵌 WKWebView 支持 **Mermaid 图表**
-- **大范围文本选择**，支持跨段落选择（需手动开启）
+- **大范围文本选择**，支持跨段落选择
 - **主题系统**，内置主题（default、gitHub、compact）
-- **隐私优先** - 网络功能默认禁用
 - **跨平台**支持 iOS 18+ 和 macOS 15+
 - **纯 SwiftUI** - WebView 使用最小化（仅 Mermaid 使用）
 
@@ -43,10 +42,10 @@
 | 无序列表 | `- item` 或 `* item` | 已支持（含嵌套） |
 | 任务列表 | `- [ ]` 和 `- [x]` | 已支持 |
 | 表格 | GFM 管道表格 | 已支持 |
-| 链接 | `[text](url)` | 需手动开启（.links 特性） |
-| 图片 | `![alt](url)` | 需手动开启（.images 特性） |
-| Mermaid 图表 | ` ```mermaid ` | 需手动开启（.mermaid 特性） |
-| 脚注 | `[^1]` 和 `[^1]: text` | 需手动开启（.footnotes 特性） |
+| 链接 | `[text](url)` | 已支持 |
+| 图片 | `![alt](url)` | 已支持 |
+| Mermaid 图表 | ` ```mermaid ` | 已支持 |
+| 脚注 | `[^1]` 和 `[^1]: text` | 已支持 |
 | 分隔线 | `---` 或 `***` | 已支持 |
 | 行内 LaTeX | `$E=mc^2$` | 已支持 |
 | 块级 LaTeX | `$$...$$` | 已支持 |
@@ -117,10 +116,10 @@ MarkdownView(content)
 var customTheme = MarkdownTheme.default
 
 // 字体
-customTheme.bodyFont = .system(size: 15)
-customTheme.heading1Font = .system(size: 28, weight: .bold)
-customTheme.codeFont = .system(.body, design: .monospaced)
-customTheme.codeBlockFont = .system(.callout, design: .monospaced)
+customTheme.bodyFont = .systemFont(ofSize: 15)
+customTheme.heading1Font = .systemFont(ofSize: 28, weight: .bold)
+customTheme.codeFont = .monospacedSystemFont(ofSize: 15, weight: .regular)
+customTheme.codeBlockFont = .monospacedSystemFont(ofSize: 13, weight: .regular)
 
 // 颜色
 customTheme.textColor = .primary
@@ -128,8 +127,6 @@ customTheme.secondaryTextColor = .secondary
 customTheme.linkColor = .blue
 customTheme.codeBackgroundColor = Color(white: 0.95)
 customTheme.blockQuoteBorderColor = Color(white: 0.75)
-customTheme.tableBorderColor = Color(white: 0.80)
-customTheme.tableHeaderBackgroundColor = Color(white: 0.90)
 
 // 间距
 customTheme.paragraphSpacing = 12
@@ -141,34 +138,12 @@ MarkdownView(content)
     .markdownTheme(customTheme)
 ```
 
-## 特性开关
+## 默认行为
 
-出于隐私考虑，依赖网络的功能默认禁用。使用 `.markdownFeatures()` 修饰符启用：
-
-```swift
-// 启用可点击链接
-MarkdownView(content)
-    .markdownFeatures(.links)
-
-// 启用多个特性
-MarkdownView(content)
-    .markdownFeatures([.links, .images, .syntaxHighlighting, .textSelection])
-
-// 启用所有特性
-MarkdownView(content)
-    .markdownFeatures(.all)
-```
-
-### 可用特性
-
-| 特性 | 描述 | 需要网络 |
-|---------|-------------|------------------|
-| `.links` | 使链接可点击。iOS 在 SFSafariViewController 中打开，macOS 在默认浏览器中打开 | 可选 |
-| `.images` | 使用 AsyncImage 加载并显示远程图片 | 是 |
-| `.syntaxHighlighting` | 根据语言对代码块进行着色 | 否 |
-| `.mermaid` | 使用 WKWebView 渲染 Mermaid 图表 | 是（CDN） |
-| `.footnotes` | 处理脚注语法（`[^1]`）并以上标形式渲染 | 否 |
-| `.textSelection` | 启用原生大范围选择和跨块复制功能 | 否 |
+- 链接、图片、Mermaid、语法高亮、脚注默认开启
+- 文本默认支持跨段落选择和复制
+- 通过 `MarkdownTheme` 统一控制字体、颜色和间距
+- 通过 `.onLinkTap(_:)` 覆盖默认的链接打开行为
 
 ### 自定义链接处理器
 
@@ -176,7 +151,6 @@ MarkdownView(content)
 
 ```swift
 MarkdownView(content)
-    .markdownFeatures(.links)
     .onLinkTap { url in
         // 自定义处理
         print("Tapped: \(url)")
@@ -185,20 +159,13 @@ MarkdownView(content)
 
 ### 大范围文本选择
 
-使用 `.textSelection` 启用跨段落选择和复制：
-
-```swift
-MarkdownView(content)
-    .markdownFeatures(.textSelection)
-```
-
-选择模式针对长文本阅读和复制进行了优化。在此模式下，文本选择交互优先于行内点击手势。
+跨段落选择和复制默认开启，适合长文本阅读和摘录。
 
 在 iOS 18+ 和 macOS 15+ 上，选择使用基于布局的原生覆盖层，以实现更好的跨块对齐。
 
 ### 语法高亮
 
-启用 `.syntaxHighlighting` 后，带语言标识符的代码块将被着色：
+带语言标识符的代码块会自动着色：
 
 ```swift
 MarkdownView("""
@@ -207,7 +174,6 @@ MarkdownView("""
     print(greeting)
     ```
 """)
-.markdownFeatures(.syntaxHighlighting)
 ```
 
 支持的语言：Swift、Python、JavaScript、TypeScript、Java、C、C++、Go、Rust、Ruby、Kotlin、PHP、C#。
@@ -223,7 +189,7 @@ theme.syntaxColors.comment = .gray
 
 ### Mermaid 图表
 
-启用 `.mermaid` 后，Mermaid 代码块将渲染为图表：
+Mermaid 代码块会自动渲染为图表：
 
 ```swift
 MarkdownView("""
@@ -234,14 +200,13 @@ MarkdownView("""
         B -->|No| D[Cancel]
     ```
 """)
-.markdownFeatures(.mermaid)
 ```
 
 支持所有 Mermaid 图表类型：流程图、序列图、类图、状态图、甘特图、饼图等。
 
 ### 脚注
 
-启用 `.footnotes` 后，脚注语法将被处理并渲染：
+脚注语法会自动处理并渲染：
 
 ```swift
 MarkdownView("""
@@ -252,7 +217,6 @@ MarkdownView("""
     [^1]: Source: Academic Paper, 2024.
     [^note]: See the documentation for details.
 """)
-.markdownFeatures(.footnotes)
 ```
 
 脚注特点：
