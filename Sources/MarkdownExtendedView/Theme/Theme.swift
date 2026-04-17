@@ -6,12 +6,17 @@
 
 import SwiftUI
 
+#if canImport(AppKit)
+import AppKit
+public typealias MarkdownNativeFont = NSFont
+#elseif canImport(UIKit)
+import UIKit
+public typealias MarkdownNativeFont = UIFont
+#endif
+
 // MARK: - Syntax Colors
 
 /// Colors for syntax highlighting in code blocks.
-///
-/// These colors are used when the ``MarkdownFeatures/syntaxHighlighting`` feature
-/// is enabled to colorize different token types in code blocks.
 public struct SyntaxColors: Sendable {
 
     /// Color for keywords (e.g., `let`, `func`, `class`, `if`, `return`).
@@ -37,12 +42,12 @@ public struct SyntaxColors: Sendable {
 
     /// Creates a syntax color palette.
     public init(
-        keyword: Color = Color(red: 0.61, green: 0.13, blue: 0.58),      // Purple
-        string: Color = Color(red: 0.77, green: 0.1, blue: 0.09),         // Red
-        comment: Color = Color(red: 0.42, green: 0.48, blue: 0.51),       // Gray
-        number: Color = Color(red: 0.11, green: 0.44, blue: 0.72),        // Blue
-        type: Color = Color(red: 0.11, green: 0.44, blue: 0.72),          // Blue
-        function: Color = Color(red: 0.16, green: 0.5, blue: 0.73),       // Teal
+        keyword: Color = Color(red: 0.61, green: 0.13, blue: 0.58),
+        string: Color = Color(red: 0.77, green: 0.1, blue: 0.09),
+        comment: Color = Color(red: 0.42, green: 0.48, blue: 0.51),
+        number: Color = Color(red: 0.11, green: 0.44, blue: 0.72),
+        type: Color = Color(red: 0.11, green: 0.44, blue: 0.72),
+        function: Color = Color(red: 0.16, green: 0.5, blue: 0.73),
         plain: Color = .primary
     ) {
         self.keyword = keyword
@@ -59,133 +64,159 @@ public struct SyntaxColors: Sendable {
 
     /// GitHub-style syntax colors.
     public static let gitHub = SyntaxColors(
-        keyword: Color(red: 0.84, green: 0.16, blue: 0.5),                // #d73a49
-        string: Color(red: 0.0, green: 0.37, blue: 0.73),                 // #005cc5
-        comment: Color(red: 0.42, green: 0.48, blue: 0.51),               // #6a737d
-        number: Color(red: 0.0, green: 0.37, blue: 0.73),                 // #005cc5
-        type: Color(red: 0.42, green: 0.22, blue: 0.6),                   // #6f42c1
-        function: Color(red: 0.42, green: 0.22, blue: 0.6),               // #6f42c1
-        plain: Color(red: 0.14, green: 0.16, blue: 0.18)                  // #24292e
+        keyword: Color(red: 0.84, green: 0.16, blue: 0.5),
+        string: Color(red: 0.0, green: 0.37, blue: 0.73),
+        comment: Color(red: 0.42, green: 0.48, blue: 0.51),
+        number: Color(red: 0.0, green: 0.37, blue: 0.73),
+        type: Color(red: 0.42, green: 0.22, blue: 0.6),
+        function: Color(red: 0.42, green: 0.22, blue: 0.6),
+        plain: Color(red: 0.14, green: 0.16, blue: 0.18)
     )
 }
+
+// MARK: - Native Font Helpers
+
+public extension MarkdownNativeFont {
+    /// A SwiftUI font bridged from the native AppKit/UIKit font.
+    var swiftUIFont: Font {
+        Font(self)
+    }
+
+    /// A stable signature used for snapshot height caching.
+    var markdownSignature: String {
+        "\(fontName):\(pointSize)"
+    }
+
+    /// The typographic line height used by the estimator.
+    var markdownLineHeight: CGFloat {
+        ceil(ascender - descender + leading)
+    }
+}
+
+public enum MarkdownThemeFontDefaults {
+    public static var body: MarkdownNativeFont {
+        system(size: 17)
+    }
+
+    public static var heading1: MarkdownNativeFont {
+        system(size: 34, weight: .bold)
+    }
+
+    public static var heading2: MarkdownNativeFont {
+        system(size: 28, weight: .bold)
+    }
+
+    public static var heading3: MarkdownNativeFont {
+        system(size: 22, weight: .bold)
+    }
+
+    public static var heading4: MarkdownNativeFont {
+        system(size: 20, weight: .semibold)
+    }
+
+    public static var heading5: MarkdownNativeFont {
+        system(size: 17, weight: .semibold)
+    }
+
+    public static var heading6: MarkdownNativeFont {
+        system(size: 15, weight: .semibold)
+    }
+
+    public static var code: MarkdownNativeFont {
+        monospaced(size: 17)
+    }
+
+    public static var codeBlock: MarkdownNativeFont {
+        monospaced(size: 14)
+    }
+
+    static func system(size: CGFloat, weight: MarkdownSystemFontWeight = .regular) -> MarkdownNativeFont {
+#if canImport(AppKit)
+        return NSFont.systemFont(ofSize: size, weight: weight)
+#else
+        return UIFont.systemFont(ofSize: size, weight: weight)
+#endif
+    }
+
+    static func monospaced(size: CGFloat, weight: MarkdownSystemFontWeight = .regular) -> MarkdownNativeFont {
+#if canImport(AppKit)
+        return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+#else
+        return UIFont.monospacedSystemFont(ofSize: size, weight: weight)
+#endif
+    }
+}
+
+#if canImport(AppKit)
+typealias MarkdownSystemFontWeight = NSFont.Weight
+#elseif canImport(UIKit)
+typealias MarkdownSystemFontWeight = UIFont.Weight
+#endif
 
 // MARK: - Theme
 
 /// A theme for customizing the appearance of rendered Markdown content.
 ///
 /// `MarkdownTheme` provides comprehensive control over typography, colors, and spacing
-/// for all Markdown elements. You can use one of the built-in themes or create a custom
-/// theme by modifying properties.
-///
-/// ## Using Built-in Themes
-///
-/// ```swift
-/// MarkdownView(content)
-///     .markdownTheme(.gitHub)
-/// ```
-///
-/// ## Creating a Custom Theme
-///
-/// ```swift
-/// var theme = MarkdownTheme.default
-/// theme.linkColor = .purple
-/// theme.paragraphSpacing = 16
-///
-/// MarkdownView(content)
-///     .markdownTheme(theme)
-/// ```
-///
-/// ## Available Properties
-///
-/// ### Typography
-/// - ``bodyFont``: Main paragraph text
-/// - ``heading1Font`` through ``heading6Font``: Heading levels
-/// - ``codeFont``: Inline code spans
-/// - ``codeBlockFont``: Fenced code blocks
-///
-/// ### Colors
-/// - ``textColor``: Primary text color
-/// - ``secondaryTextColor``: De-emphasized text (e.g., image alt text)
-/// - ``linkColor``: Hyperlink color
-/// - ``codeBackgroundColor``: Background for code blocks
-/// - ``blockQuoteBorderColor``: Left border of block quotes
-/// - ``tableBorderColor``: Table cell borders
-/// - ``tableHeaderBackgroundColor``: Table header row background
-///
-/// ### Spacing
-/// - ``paragraphSpacing``: Vertical space between block elements
-/// - ``listItemSpacing``: Space between list items
-/// - ``indentation``: Indent for nested content
-/// - ``codeBlockPadding``: Internal padding of code blocks
-public struct MarkdownTheme: Sendable {
+/// for all Markdown elements. Fonts are stored as native AppKit/UIKit fonts so the same
+/// values can be used for both rendering and height estimation.
+public struct MarkdownTheme: @unchecked Sendable {
 
     // MARK: - Text Styles
 
     /// Font for body text.
-    public var bodyFont: Font
+    public var bodyFont: MarkdownNativeFont
     /// Font for H1 headings.
-    public var heading1Font: Font
+    public var heading1Font: MarkdownNativeFont
     /// Font for H2 headings.
-    public var heading2Font: Font
+    public var heading2Font: MarkdownNativeFont
     /// Font for H3 headings.
-    public var heading3Font: Font
+    public var heading3Font: MarkdownNativeFont
     /// Font for H4 headings.
-    public var heading4Font: Font
+    public var heading4Font: MarkdownNativeFont
     /// Font for H5 headings.
-    public var heading5Font: Font
+    public var heading5Font: MarkdownNativeFont
     /// Font for H6 headings.
-    public var heading6Font: Font
+    public var heading6Font: MarkdownNativeFont
     /// Font for inline code.
-    public var codeFont: Font
+    public var codeFont: MarkdownNativeFont
     /// Font for code blocks.
-    public var codeBlockFont: Font
-    
+    public var codeBlockFont: MarkdownNativeFont
+
     public var latexInlineFontSize: CGFloat
     public var latexBlockFontSize: CGFloat
     public var mermaidFontSize: CGFloat
 
     // MARK: - Colors
 
-    /// Primary text color.
     public var textColor: Color
-    /// Secondary text color (for less emphasis).
     public var secondaryTextColor: Color
-    /// Link color.
     public var linkColor: Color
-    /// Code background color.
     public var codeBackgroundColor: Color
-    /// Block quote border color.
     public var blockQuoteBorderColor: Color
-    
-    /// Syntax highlighting colors for code blocks.
     public var syntaxColors: SyntaxColors
 
     // MARK: - Spacing
 
-    /// Spacing between paragraphs.
     public var paragraphSpacing: CGFloat
-    /// Spacing between list items.
     public var listItemSpacing: CGFloat
-    /// Indentation for nested content.
     public var indentation: CGFloat
-    /// Padding inside code blocks.
     public var codeBlockPadding: CGFloat
-
     public var codeLineSpacing: CGFloat
-    
     public var textAlignment: HorizontalAlignment = .leading
+
     // MARK: - Initialization
 
     public init(
-        bodyFont: Font = .body,
-        heading1Font: Font = .largeTitle.bold(),
-        heading2Font: Font = .title.bold(),
-        heading3Font: Font = .title2.bold(),
-        heading4Font: Font = .title3.bold(),
-        heading5Font: Font = .headline,
-        heading6Font: Font = .subheadline.bold(),
-        codeFont: Font = .system(.body, design: .monospaced),
-        codeBlockFont: Font = .system(.callout, design: .monospaced),
+        bodyFont: MarkdownNativeFont = MarkdownThemeFontDefaults.body,
+        heading1Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading1,
+        heading2Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading2,
+        heading3Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading3,
+        heading4Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading4,
+        heading5Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading5,
+        heading6Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading6,
+        codeFont: MarkdownNativeFont = MarkdownThemeFontDefaults.code,
+        codeBlockFont: MarkdownNativeFont = MarkdownThemeFontDefaults.codeBlock,
         latexInlineFontSize: CGFloat = 13,
         latexBlockFontSize: CGFloat = 20,
         mermaidFontSize: CGFloat = 13,
@@ -228,8 +259,8 @@ public struct MarkdownTheme: Sendable {
         self.textAlignment = textAlignment
     }
 
-    /// Returns the font for the specified heading level.
-    public func headingFont(level: Int) -> Font {
+    /// Returns the native font for the specified heading level.
+    public func headingFont(level: Int) -> MarkdownNativeFont {
         switch level {
         case 1: return heading1Font
         case 2: return heading2Font
@@ -240,7 +271,45 @@ public struct MarkdownTheme: Sendable {
         default: return heading6Font
         }
     }
-    
+
+    public func headingSwiftUIFont(level: Int) -> Font {
+        headingFont(level: level).swiftUIFont
+    }
+
+    public var bodySwiftUIFont: Font {
+        bodyFont.swiftUIFont
+    }
+
+    public var codeSwiftUIFont: Font {
+        codeFont.swiftUIFont
+    }
+
+    public var codeBlockSwiftUIFont: Font {
+        codeBlockFont.swiftUIFont
+    }
+
+    var layoutSignature: String {
+        [
+            bodyFont.markdownSignature,
+            heading1Font.markdownSignature,
+            heading2Font.markdownSignature,
+            heading3Font.markdownSignature,
+            heading4Font.markdownSignature,
+            heading5Font.markdownSignature,
+            heading6Font.markdownSignature,
+            codeFont.markdownSignature,
+            codeBlockFont.markdownSignature,
+            "\(latexInlineFontSize)",
+            "\(latexBlockFontSize)",
+            "\(paragraphSpacing)",
+            "\(listItemSpacing)",
+            "\(indentation)",
+            "\(codeBlockPadding)",
+            "\(codeLineSpacing)",
+            "\(textAlignment.markdownSignature)"
+        ].joined(separator: "|")
+    }
+
     public func toTextAlignment() -> TextAlignment {
         switch textAlignment {
         case .center: return .center
@@ -255,28 +324,18 @@ public struct MarkdownTheme: Sendable {
 
 public extension MarkdownTheme {
 
-    /// The default theme that adapts to system appearance.
-    ///
-    /// Uses system semantic fonts (`Font.body`, `Font.title`, etc.) and colors
-    /// (`Color.primary`, `Color.accentColor`) that automatically adapt to
-    /// light/dark mode and accessibility settings.
     static let `default` = MarkdownTheme()
 
-    /// A GitHub-style theme with fixed font sizes.
-    ///
-    /// Mimics GitHub's Markdown rendering with specific pixel-based font sizes
-    /// and GitHub's signature blue link color. Best for content that should
-    /// match GitHub's visual style.
     static let gitHub = MarkdownTheme(
-        bodyFont: .system(size: 16),
-        heading1Font: .system(size: 32, weight: .bold),
-        heading2Font: .system(size: 24, weight: .bold),
-        heading3Font: .system(size: 20, weight: .bold),
-        heading4Font: .system(size: 16, weight: .bold),
-        heading5Font: .system(size: 14, weight: .bold),
-        heading6Font: .system(size: 13, weight: .bold),
-        codeFont: .system(size: 14, design: .monospaced),
-        codeBlockFont: .system(size: 13, design: .monospaced),
+        bodyFont: MarkdownThemeFontDefaults.system(size: 16),
+        heading1Font: MarkdownThemeFontDefaults.system(size: 32, weight: .bold),
+        heading2Font: MarkdownThemeFontDefaults.system(size: 24, weight: .bold),
+        heading3Font: MarkdownThemeFontDefaults.system(size: 20, weight: .bold),
+        heading4Font: MarkdownThemeFontDefaults.system(size: 16, weight: .bold),
+        heading5Font: MarkdownThemeFontDefaults.system(size: 14, weight: .bold),
+        heading6Font: MarkdownThemeFontDefaults.system(size: 13, weight: .bold),
+        codeFont: MarkdownThemeFontDefaults.monospaced(size: 14),
+        codeBlockFont: MarkdownThemeFontDefaults.monospaced(size: 13),
         linkColor: Color(red: 0.0, green: 0.4, blue: 0.8),
         codeBackgroundColor: Color(red: 0.96, green: 0.97, blue: 0.98),
         syntaxColors: .gitHub,
@@ -286,20 +345,16 @@ public extension MarkdownTheme {
         codeBlockPadding: 16
     )
 
-    /// A compact theme optimized for smaller displays or dense content.
-    ///
-    /// Uses smaller fonts and reduced spacing to fit more content in limited space.
-    /// Ideal for sidebars, tooltips, or mobile interfaces where space is at a premium.
     static let compact = MarkdownTheme(
-        bodyFont: .callout,
-        heading1Font: .title2.bold(),
-        heading2Font: .title3.bold(),
-        heading3Font: .headline,
-        heading4Font: .subheadline.bold(),
-        heading5Font: .footnote.bold(),
-        heading6Font: .caption.bold(),
-        codeFont: .system(.caption, design: .monospaced),
-        codeBlockFont: .system(.caption2, design: .monospaced),
+        bodyFont: MarkdownThemeFontDefaults.system(size: 14),
+        heading1Font: MarkdownThemeFontDefaults.system(size: 22, weight: .bold),
+        heading2Font: MarkdownThemeFontDefaults.system(size: 20, weight: .bold),
+        heading3Font: MarkdownThemeFontDefaults.system(size: 17, weight: .semibold),
+        heading4Font: MarkdownThemeFontDefaults.system(size: 15, weight: .semibold),
+        heading5Font: MarkdownThemeFontDefaults.system(size: 13, weight: .semibold),
+        heading6Font: MarkdownThemeFontDefaults.system(size: 12, weight: .semibold),
+        codeFont: MarkdownThemeFontDefaults.monospaced(size: 12),
+        codeBlockFont: MarkdownThemeFontDefaults.monospaced(size: 11),
         paragraphSpacing: 8,
         listItemSpacing: 2,
         indentation: 16,
@@ -315,18 +370,19 @@ private struct MarkdownThemeKey: EnvironmentKey {
 
 public extension EnvironmentValues {
     /// The current Markdown theme used by ``MarkdownView`` instances.
-    ///
-    /// Set this value using the ``SwiftUI/View/markdownTheme(_:)`` modifier:
-    ///
-    /// ```swift
-    /// MarkdownView(content)
-    ///     .markdownTheme(.gitHub)
-    /// ```
-    ///
-    /// The theme propagates through the view hierarchy, so you can set it
-    /// at a parent level to affect all nested Markdown views.
     var markdownTheme: MarkdownTheme {
         get { self[MarkdownThemeKey.self] }
         set { self[MarkdownThemeKey.self] = newValue }
+    }
+}
+
+private extension HorizontalAlignment {
+    var markdownSignature: String {
+        switch self {
+        case .center: return "center"
+        case .leading: return "leading"
+        case .trailing: return "trailing"
+        default: return "leading"
+        }
     }
 }

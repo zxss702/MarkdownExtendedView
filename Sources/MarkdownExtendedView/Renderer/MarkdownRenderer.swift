@@ -47,7 +47,7 @@ struct MarkdownRenderer: View {
         } else if let htmlBlock = markup as? HTMLBlock {
             return AnyView(
                 SwiftUI.Text(htmlBlock.rawHTML)
-                    .font(theme.codeFont)
+                    .font(theme.codeSwiftUIFont)
                     .foregroundColor(theme.secondaryTextColor)
                     .selectionTextPassThrough()
             )
@@ -61,7 +61,7 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderHeading(_ heading: Heading) -> some View {
         renderInlineChildren(heading)
-            .font(theme.headingFont(level: heading.level))
+            .font(theme.headingSwiftUIFont(level: heading.level))
             .foregroundColor(theme.textColor)
             .padding(.top, heading.level == 1 ? 16 : 8)
             .padding(.bottom, 4)
@@ -79,7 +79,7 @@ struct MarkdownRenderer: View {
             LaTeXView(latex: latex, isBlock: true, theme: theme)
         } else {
             renderInlineChildren(paragraph)
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
         }
     }
@@ -111,7 +111,7 @@ struct MarkdownRenderer: View {
                 )
             } else {
                 Text(codeBlock.code.trimmingCharacters(in: .newlines))
-                    .font(theme.codeBlockFont)
+                    .font(theme.codeBlockSwiftUIFont)
                     .foregroundColor(theme.textColor)
             }
         }
@@ -178,7 +178,7 @@ struct MarkdownRenderer: View {
     private func renderListItem(_ item: ListItem, bullet: String, depth: Int) -> some View {
         HStack(alignment: .top, spacing: 4) {
             Text(bullet)
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
@@ -194,7 +194,7 @@ struct MarkdownRenderer: View {
     private func renderTaskListItem(_ item: ListItem, depth: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: item.checkbox?.isChecked == true ? "checkmark.square.fill" : "square")
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(item.checkbox?.isChecked == true ? theme.linkColor : theme.secondaryTextColor)
                 .frame(width: 20, alignment: .trailing)
 
@@ -269,7 +269,8 @@ struct MarkdownRenderer: View {
         HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 renderInlineChildren(cell)
-                    .font(isHeader ? theme.bodyFont.weight(.semibold) : theme.bodyFont)
+                    .font(theme.bodySwiftUIFont)
+                    .fontWeight(isHeader ? .semibold : nil)
                     .foregroundColor(theme.textColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -302,12 +303,10 @@ struct MarkdownRenderer: View {
             return AnyView(renderTextWithLaTeX(parent))
         }
 
-        // Check if links are enabled and content contains links
         if containsLinks(parent) {
             return AnyView(renderTextWithLinks(parent))
         }
 
-        // Check if images are enabled and content contains images
         if containsImages(parent) {
             return AnyView(renderTextWithImages(parent))
         }
@@ -359,7 +358,7 @@ struct MarkdownRenderer: View {
         switch element {
         case let text as Markdown.Text:
             SwiftUI.Text(text.string)
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
@@ -379,19 +378,19 @@ struct MarkdownRenderer: View {
 
         case let code as InlineCode:
             SwiftUI.Text(code.code)
-                .font(theme.codeFont)
+                .font(theme.codeSwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
         case _ as SoftBreak:
             SwiftUI.Text(" ")
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
         case _ as LineBreak:
             SwiftUI.Text("\n")
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
@@ -405,7 +404,7 @@ struct MarkdownRenderer: View {
         default:
             if let plainText = element as? any PlainTextConvertibleMarkup {
                 SwiftUI.Text(plainText.plainText)
-                    .font(theme.bodyFont)
+                    .font(theme.bodySwiftUIFont)
                     .foregroundColor(theme.textColor)
                     .selectionTextPassThrough()
             }
@@ -418,7 +417,7 @@ struct MarkdownRenderer: View {
         // Simplified: render plain text with bold styling
         SwiftUI.Text(extractPlainText(from: strong))
             .bold()
-            .font(theme.bodyFont)
+            .font(theme.bodySwiftUIFont)
             .foregroundColor(theme.textColor)
             .selectionTextPassThrough()
     }
@@ -429,7 +428,7 @@ struct MarkdownRenderer: View {
         // Simplified: render plain text with italic styling
         SwiftUI.Text(extractPlainText(from: emphasis))
             .italic()
-            .font(theme.bodyFont)
+            .font(theme.bodySwiftUIFont)
             .foregroundColor(theme.textColor)
             .selectionTextPassThrough()
     }
@@ -454,7 +453,7 @@ struct MarkdownRenderer: View {
         switch segment {
         case .text(let text):
             SwiftUI.Text(text)
-                .font(theme.bodyFont)
+                .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
@@ -492,7 +491,7 @@ struct MarkdownRenderer: View {
 
         case let code as InlineCode:
             return SwiftUI.Text(code.code)
-                .font(theme.codeFont)
+                .font(theme.codeSwiftUIFont)
             
         case let link as Markdown.Link:
             let inner = buildTextFromChildren(link)

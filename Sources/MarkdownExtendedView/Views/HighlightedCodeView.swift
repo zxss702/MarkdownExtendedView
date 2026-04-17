@@ -48,14 +48,14 @@ public struct HighlightedCodeView: View {
     private func lineView(for tokens: [Token]) -> some View {
         if tokens.isEmpty {
             Text(" ")
-                .font(theme.codeBlockFont)
+                .font(theme.codeBlockSwiftUIFont)
                 .codeSelectionTextPassThrough()
         } else {
             tokens.reduce(SwiftUI.Text("")) { result, token in
                 result + SwiftUI.Text(token.text)
                     .foregroundColor(color(for: token.type))
             }
-            .font(theme.codeBlockFont)
+            .font(theme.codeBlockSwiftUIFont)
             .codeSelectionTextPassThrough()
         }
     }

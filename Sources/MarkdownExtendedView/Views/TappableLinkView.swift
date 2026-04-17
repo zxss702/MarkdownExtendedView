@@ -63,12 +63,12 @@ struct TappableLinkView: View {
                 let inner = extractPlainText(from: child)
                 result = result + SwiftUI.Text(inner).italic()
             } else if let code = child as? InlineCode {
-                result = result + SwiftUI.Text(code.code).font(theme.codeFont)
+                result = result + SwiftUI.Text(code.code).font(theme.codeSwiftUIFont)
             } else if let plain = child as? any PlainTextConvertibleMarkup {
                 result = result + SwiftUI.Text(plain.plainText)
             }
         }
-        return result.font(theme.bodyFont)
+        return result.font(theme.bodySwiftUIFont)
     }
 
     /// Extracts plain text from markup.

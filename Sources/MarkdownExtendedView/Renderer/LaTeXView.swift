@@ -34,6 +34,7 @@ struct LaTeXView: View {
     @ViewBuilder
     private var mathView: some View {
         MathView(latex: latex)
+            .labelMode(isBlock ? .display : .text)
             .font(fontSize: isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
             .foregroundColor(textColor)
     }
@@ -57,6 +58,7 @@ struct MathView {
     fileprivate var fontSize: CGFloat = 16
     fileprivate var textColor: MTColor = .black
     fileprivate var textAlignment: MTTextAlignment = .right
+    fileprivate var labelMode: MTMathUILabelMode = .display
 
     init(latex: String) {
         self.latex = latex
@@ -76,6 +78,12 @@ struct MathView {
         return view
     }
 
+    func labelMode(_ mode: MTMathUILabelMode) -> MathView {
+        var view = self
+        view.labelMode = mode
+        return view
+    }
+
     func textAlignment(_ alignment: MTTextAlignment) -> MathView {
         var view = self
         view.textAlignment = alignment
@@ -91,7 +99,7 @@ extension MathView: UIViewRepresentable {
         label.fontSize = fontSize
         label.textColor = textColor
         label.textAlignment = textAlignment
-        label.labelMode = .display
+        label.labelMode = labelMode
         label.backgroundColor = .clear
         return label
     }
@@ -101,6 +109,7 @@ extension MathView: UIViewRepresentable {
         uiView.fontSize = fontSize
         uiView.textColor = textColor
         uiView.textAlignment = textAlignment
+        uiView.labelMode = labelMode
     }
 }
 #elseif os(macOS)
@@ -111,7 +120,7 @@ extension MathView: NSViewRepresentable {
         label.fontSize = fontSize
         label.textColor = textColor
         label.textAlignment = textAlignment
-        label.labelMode = .display
+        label.labelMode = labelMode
         // Note: backgroundColor not accessible on macOS, view is transparent by default
         
         return label
@@ -122,6 +131,7 @@ extension MathView: NSViewRepresentable {
         nsView.fontSize = fontSize
         nsView.textColor = textColor
         nsView.textAlignment = textAlignment
+        nsView.labelMode = labelMode
     }
 }
 #endif
