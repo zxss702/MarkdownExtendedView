@@ -67,12 +67,21 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertNotNil(modifiedView)
     }
 
+    func testOnCodeReferenceTapModifierExists() {
+        let view = Text("Test")
+        let modifiedView = view.onCodeReferenceTap { _ in }
+        XCTAssertNotNil(modifiedView)
+    }
+
     func testModifiersCanBeChained() {
         let view = Text("Test")
         let modifiedView = view
             .markdownTheme(.compact)
             .onLinkTap { url in
                 print("Tapped: \(url)")
+            }
+            .onCodeReferenceTap { reference in
+                print("Tapped code reference: \(reference)")
             }
         XCTAssertNotNil(modifiedView)
     }

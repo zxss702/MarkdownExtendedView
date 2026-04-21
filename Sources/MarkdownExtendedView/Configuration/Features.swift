@@ -11,11 +11,22 @@ private struct MarkdownLinkHandlerKey: EnvironmentKey {
     static let defaultValue: (@Sendable (URL) -> Void)? = nil
 }
 
+/// Environment key for custom code reference tap handling.
+private struct MarkdownCodeReferenceHandlerKey: EnvironmentKey {
+    static let defaultValue: (@Sendable (CodeReference) -> Void)? = nil
+}
+
 public extension EnvironmentValues {
     /// A custom handler for link taps in ``MarkdownView``.
     var markdownLinkHandler: (@Sendable (URL) -> Void)? {
         get { self[MarkdownLinkHandlerKey.self] }
         set { self[MarkdownLinkHandlerKey.self] = newValue }
+    }
+
+    /// A custom handler for code reference taps in ``MarkdownView``.
+    var markdownCodeReferenceHandler: (@Sendable (CodeReference) -> Void)? {
+        get { self[MarkdownCodeReferenceHandlerKey.self] }
+        set { self[MarkdownCodeReferenceHandlerKey.self] = newValue }
     }
 }
 
@@ -24,5 +35,10 @@ public extension View {
     /// Sets a custom handler for link taps in Markdown content.
     func onLinkTap(_ handler: @escaping @Sendable (URL) -> Void) -> some View {
         environment(\.markdownLinkHandler, handler)
+    }
+
+    /// Sets a custom handler for code reference taps in Markdown code blocks.
+    func onCodeReferenceTap(_ handler: @escaping @Sendable (CodeReference) -> Void) -> some View {
+        environment(\.markdownCodeReferenceHandler, handler)
     }
 }

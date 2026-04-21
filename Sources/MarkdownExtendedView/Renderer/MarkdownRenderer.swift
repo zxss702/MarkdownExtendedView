@@ -15,6 +15,7 @@ struct MarkdownRenderer: View {
     let baseURL: URL?
 
     @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownCodeReferenceHandler) private var codeReferenceHandler
 
     var body: some View {
         LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
@@ -77,6 +78,8 @@ struct MarkdownRenderer: View {
             // This is a display LaTeX block
             let latex = String(plainText.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
             LaTeXView(latex: latex, isBlock: true, theme: theme)
+        } else if let references = inlineCodeReferences(in: paragraph), !references.isEmpty {
+            renderCodeReferences(references)
         } else {
             renderInlineChildren(paragraph)
                 .font(theme.bodySwiftUIFont)
@@ -102,8 +105,13 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderRegularCodeBlock(_ codeBlock: CodeBlock) -> some View {
+        let normalizedCode = codeBlock.code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let references = parseCodeReferences(from: normalizedCode)
+
         Group {
-            if codeBlock.language != nil {
+            if let references, !references.isEmpty {
+                renderCodeReferences(references)
+            } else if codeBlock.language != nil {
                 HighlightedCodeView(
                     code: codeBlock.code,
                     language: codeBlock.language,
@@ -115,10 +123,20 @@ struct MarkdownRenderer: View {
                     .foregroundColor(theme.textColor)
             }
         }
-        .padding(theme.codeBlockPadding)
-        .background(theme.codeBackgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .selectionTextPassThrough()
+        .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: references != nil))
+    }
+
+    @ViewBuilder
+    private func renderCodeReferences(_ references: [CodeReference]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
+                CodeReferenceBlockView(
+                    reference: reference,
+                    theme: theme,
+                    tapHandler: codeReferenceHandler
+                )
+            }
+        }
     }
 
     // MARK: - Block Quote
@@ -377,10 +395,18 @@ struct MarkdownRenderer: View {
             )
 
         case let code as InlineCode:
-            SwiftUI.Text(code.code)
-                .font(theme.codeSwiftUIFont)
-                .foregroundColor(theme.textColor)
-                .selectionTextPassThrough()
+            if let references = parseCodeReferences(from: code.code), references.count == 1, let reference = references.first {
+                CodeReferenceBlockView(
+                    reference: reference,
+                    theme: theme,
+                    tapHandler: codeReferenceHandler
+                )
+            } else {
+                SwiftUI.Text(code.code)
+                    .font(theme.codeSwiftUIFont)
+                    .foregroundColor(theme.textColor)
+                    .selectionTextPassThrough()
+            }
 
         case _ as SoftBreak:
             SwiftUI.Text(" ")
@@ -530,6 +556,59 @@ struct MarkdownRenderer: View {
             return plainText.plainText
         }
         return markup.children.map { extractPlainText(from: $0) }.joined()
+    }
+
+    private func inlineCodeReferences(in paragraph: Paragraph) -> [CodeReference]? {
+        var references: [CodeReference] = []
+
+        for child in paragraph.children {
+            switch child {
+            case let inlineCode as InlineCode:
+                guard let parsed = parseCodeReferences(from: inlineCode.code), !parsed.isEmpty else {
+                    return nil
+                }
+                references.append(contentsOf: parsed)
+
+            case let text as Markdown.Text:
+                guard text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return nil
+                }
+
+            case _ as SoftBreak, _ as LineBreak:
+                continue
+
+            default:
+                return nil
+            }
+        }
+
+        return references.isEmpty ? nil : references
+    }
+}
+
+private struct CodeBlockContainerModifier: ViewModifier {
+    let theme: MarkdownTheme
+    let isInteractive: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(isInteractive ? .zero : theme.codeBlockPadding)
+            .background(isInteractive ? Color.clear : theme.codeBackgroundColor)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .modifier(CodeBlockSelectionModifier(isInteractive: isInteractive))
+    }
+}
+
+private struct CodeBlockSelectionModifier: ViewModifier {
+    let isInteractive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isInteractive {
+            content
+        } else {
+            content.selectionTextPassThrough()
+        }
     }
 }
 
