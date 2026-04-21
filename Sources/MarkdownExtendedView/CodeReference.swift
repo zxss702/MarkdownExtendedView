@@ -7,21 +7,21 @@
 
 import Foundation
 
-public let canonicalCodeReferenceFormat = "`file:///.../name:<start>-<end>`"
+let canonicalCodeReferenceFormat = "`file:///.../name:<start>-<end>`"
 
-public enum CodeReferenceSelectionError: Error, Sendable {
+enum CodeReferenceSelectionError: Error, Sendable {
     case lineOutOfRange(totalLineCount: Int)
     case invalidLineRange(totalLineCount: Int)
 }
 
-public enum CodeReference: Hashable, Sendable {
+enum CodeReference: Hashable, Sendable {
     case directory(url: URL)
     case entire(url: URL)
     case singleLine(url: URL, line: Int)
     case multipleLines(url: URL, start: Int, end: Int)
     case selections(url: URL, ranges: [ClosedRange<Int>])
 
-    public init?(_ reference: String) {
+    init?(_ reference: String) {
         let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -41,7 +41,7 @@ public enum CodeReference: Hashable, Sendable {
         self = codeReferenceForFilesystemObject(at: fileURL)
     }
 
-    public var referenceString: String {
+    var referenceString: String {
         switch self {
         case .directory(let url):
             return normalizedFileURL(from: url, isDirectory: true).filePathString()
@@ -74,14 +74,14 @@ public enum CodeReference: Hashable, Sendable {
         }
     }
 
-    public var url: URL {
+    var url: URL {
         switch self {
         case .directory(let url), .entire(let url), .singleLine(let url, _), .multipleLines(let url, _, _), .selections(let url, _):
             return url
         }
     }
 
-    public var fileName: String {
+    var fileName: String {
         let trimmedPath = url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if trimmedPath.isEmpty {
             return url.lastPathComponent.isEmpty ? url.path(percentEncoded: false) : url.lastPathComponent
@@ -89,7 +89,7 @@ public enum CodeReference: Hashable, Sendable {
         return url.lastPathComponent.isEmpty ? trimmedPath : url.lastPathComponent
     }
 
-    public var lineDescription: String? {
+    var lineDescription: String? {
         switch self {
         case .directory, .entire:
             return nil
@@ -115,7 +115,7 @@ public enum CodeReference: Hashable, Sendable {
         }
     }
 
-    public var lineRanges: [ClosedRange<Int>] {
+    var lineRanges: [ClosedRange<Int>] {
         switch self {
         case .directory, .entire:
             return []
@@ -229,7 +229,7 @@ private func selectedLineRanges(for reference: CodeReference, in lines: [String]
     }
 }
 
-public extension URL {
+extension URL {
     func codeReferenceString(startLine: Int, endLine: Int) -> String {
         CodeReference.multipleLines(
             url: self,
