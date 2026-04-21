@@ -15,7 +15,7 @@ struct MarkdownRenderer: View {
     let baseURL: URL?
 
     @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownCodeReferenceHandler) private var codeReferenceHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
@@ -78,8 +78,8 @@ struct MarkdownRenderer: View {
             // This is a display LaTeX block
             let latex = String(plainText.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
             LaTeXView(latex: latex, isBlock: true, theme: theme)
-        } else if let references = inlineCodeReferences(in: paragraph), !references.isEmpty {
-            renderCodeReferences(references)
+        } else if let references = inlineMCodeReferences(in: paragraph), !references.isEmpty {
+            renderMCodeReferences(references)
         } else {
             renderInlineChildren(paragraph)
                 .font(theme.bodySwiftUIFont)
@@ -106,11 +106,11 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderRegularCodeBlock(_ codeBlock: CodeBlock) -> some View {
         let normalizedCode = codeBlock.code.trimmingCharacters(in: .whitespacesAndNewlines)
-        let references = parseCodeReferences(from: normalizedCode)
+        let references = parseMCodeReferences(from: normalizedCode)
 
         Group {
             if let references, !references.isEmpty {
-                renderCodeReferences(references)
+                renderMCodeReferences(references)
             } else if codeBlock.language != nil {
                 HighlightedCodeView(
                     code: codeBlock.code,
@@ -127,13 +127,13 @@ struct MarkdownRenderer: View {
     }
 
     @ViewBuilder
-    private func renderCodeReferences(_ references: [CodeReference]) -> some View {
+    private func renderMCodeReferences(_ references: [MCodeReference]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
-                CodeReferenceBlockView(
+                MCodeReferenceBlockView(
                     reference: reference,
                     theme: theme,
-                    tapHandler: codeReferenceHandler
+                    tapHandler: MCodeReferenceHandler
                 )
             }
         }
@@ -395,11 +395,11 @@ struct MarkdownRenderer: View {
             )
 
         case let code as InlineCode:
-            if let references = parseCodeReferences(from: code.code), references.count == 1, let reference = references.first {
-                CodeReferenceBlockView(
+            if let references = parseMCodeReferences(from: code.code), references.count == 1, let reference = references.first {
+                MCodeReferenceBlockView(
                     reference: reference,
                     theme: theme,
-                    tapHandler: codeReferenceHandler
+                    tapHandler: MCodeReferenceHandler
                 )
             } else {
                 SwiftUI.Text(code.code)
@@ -558,13 +558,13 @@ struct MarkdownRenderer: View {
         return markup.children.map { extractPlainText(from: $0) }.joined()
     }
 
-    private func inlineCodeReferences(in paragraph: Paragraph) -> [CodeReference]? {
-        var references: [CodeReference] = []
+    private func inlineMCodeReferences(in paragraph: Paragraph) -> [MCodeReference]? {
+        var references: [MCodeReference] = []
 
         for child in paragraph.children {
             switch child {
             case let inlineCode as InlineCode:
-                guard let parsed = parseCodeReferences(from: inlineCode.code), !parsed.isEmpty else {
+                guard let parsed = parseMCodeReferences(from: inlineCode.code), !parsed.isEmpty else {
                     return nil
                 }
                 references.append(contentsOf: parsed)

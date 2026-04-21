@@ -1,4 +1,4 @@
-// CodeReferenceBlockView.swift
+// MCodeReferenceBlockView.swift
 //  MarkdownExtendedView
 //
 //  Created by OpenAI Codex on 2026-04-21.
@@ -7,10 +7,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct CodeReferenceBlockView: View {
-    let reference: CodeReference
+struct MCodeReferenceBlockView: View {
+    let reference: MCodeReference
     let theme: MarkdownTheme
-    let tapHandler: (@Sendable (CodeReference) -> Void)?
+    let tapHandler: (@Sendable (MCodeReference) -> Void)?
 
     var body: some View {
         Button(action: handleTap) {

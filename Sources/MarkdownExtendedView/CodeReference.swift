@@ -1,5 +1,5 @@
 //
-//  CodeReference.swift
+//  MCodeReference.swift
 //  LogorythiaShare
 //
 //  Created by OpenAI Codex on 2026-04-05.
@@ -7,25 +7,25 @@
 
 import Foundation
 
-let canonicalCodeReferenceFormat = "`file:///.../name:<start>-<end>`"
+public let canonicalMCodeReferenceFormat = "`file:///.../name:<start>-<end>`"
 
-enum CodeReferenceSelectionError: Error, Sendable {
+public enum MCodeReferenceSelectionError: Error, Sendable {
     case lineOutOfRange(totalLineCount: Int)
     case invalidLineRange(totalLineCount: Int)
 }
 
-enum CodeReference: Hashable, Sendable {
+public enum MCodeReference: Hashable, Sendable {
     case directory(url: URL)
     case entire(url: URL)
     case singleLine(url: URL, line: Int)
     case multipleLines(url: URL, start: Int, end: Int)
     case selections(url: URL, ranges: [ClosedRange<Int>])
 
-    init?(_ reference: String) {
+    public init?(_ reference: String) {
         let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let rangedReference = rangedCodeReference(from: trimmed) {
+        if let rangedReference = rangedMCodeReference(from: trimmed) {
             self = rangedReference
             return
         }
@@ -38,10 +38,10 @@ enum CodeReference: Hashable, Sendable {
             return nil
         }
 
-        self = codeReferenceForFilesystemObject(at: fileURL)
+        self = MCodeReferenceForFilesystemObject(at: fileURL)
     }
 
-    var referenceString: String {
+    public var referenceString: String {
         switch self {
         case .directory(let url):
             return normalizedFileURL(from: url, isDirectory: true).filePathString()
@@ -74,14 +74,14 @@ enum CodeReference: Hashable, Sendable {
         }
     }
 
-    var url: URL {
+    public var url: URL {
         switch self {
         case .directory(let url), .entire(let url), .singleLine(let url, _), .multipleLines(let url, _, _), .selections(let url, _):
             return url
         }
     }
 
-    var fileName: String {
+    public var fileName: String {
         let trimmedPath = url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if trimmedPath.isEmpty {
             return url.lastPathComponent.isEmpty ? url.path(percentEncoded: false) : url.lastPathComponent
@@ -89,7 +89,7 @@ enum CodeReference: Hashable, Sendable {
         return url.lastPathComponent.isEmpty ? trimmedPath : url.lastPathComponent
     }
 
-    var lineDescription: String? {
+    public var lineDescription: String? {
         switch self {
         case .directory, .entire:
             return nil
@@ -115,7 +115,7 @@ enum CodeReference: Hashable, Sendable {
         }
     }
 
-    var lineRanges: [ClosedRange<Int>] {
+    public var lineRanges: [ClosedRange<Int>] {
         switch self {
         case .directory, .entire:
             return []
@@ -132,7 +132,7 @@ enum CodeReference: Hashable, Sendable {
     }
 }
 
-private func rangedCodeReference(from rawReference: String) -> CodeReference? {
+private func rangedMCodeReference(from rawReference: String) -> MCodeReference? {
     guard let split = splitFileReferenceAndSelection(rawReference) else {
         return nil
     }
@@ -153,7 +153,7 @@ private func rangedCodeReference(from rawReference: String) -> CodeReference? {
     return .selections(url: normalizedURL, ranges: ranges)
 }
 
-private func codeReferenceForFilesystemObject(at fileURL: URL) -> CodeReference {
+private func MCodeReferenceForFilesystemObject(at fileURL: URL) -> MCodeReference {
     let filePath = fileURL.path
     var isDirectory = ObjCBool(false)
 
@@ -187,7 +187,7 @@ func readReferencedTextFile(at fileURL: URL) throws -> (Data, String) {
     throw CocoaError(.fileReadInapplicableStringEncoding)
 }
 
-func renderedSnippet(for reference: CodeReference, from fileContent: String) throws -> String {
+func renderedSnippet(for reference: MCodeReference, from fileContent: String) throws -> String {
     let lines = fileContent.components(separatedBy: .newlines)
     var result = ""
     for selectedRange in try selectedLineRanges(for: reference, in: lines) {
@@ -198,16 +198,16 @@ func renderedSnippet(for reference: CodeReference, from fileContent: String) thr
     return result
 }
 
-private func selectedLineRanges(for reference: CodeReference, in lines: [String]) throws -> [Range<Int>] {
+private func selectedLineRanges(for reference: MCodeReference, in lines: [String]) throws -> [Range<Int>] {
     switch reference {
     case .directory:
-        throw CodeReferenceSelectionError.invalidLineRange(totalLineCount: lines.count)
+        throw MCodeReferenceSelectionError.invalidLineRange(totalLineCount: lines.count)
     case .entire:
         return [0..<lines.count]
     case .singleLine, .multipleLines, .selections:
         let ranges = reference.lineRanges
         guard !ranges.isEmpty else {
-            throw CodeReferenceSelectionError.invalidLineRange(totalLineCount: lines.count)
+            throw MCodeReferenceSelectionError.invalidLineRange(totalLineCount: lines.count)
         }
 
         return try ranges.map { range in
@@ -216,12 +216,12 @@ private func selectedLineRanges(for reference: CodeReference, in lines: [String]
             let actualStartIndex = actualStartLine - 1
 
             guard actualStartIndex < lines.count else {
-                throw CodeReferenceSelectionError.lineOutOfRange(totalLineCount: lines.count)
+                throw MCodeReferenceSelectionError.lineOutOfRange(totalLineCount: lines.count)
             }
 
             let boundedEndLine = min(actualEndLine, lines.count)
             guard boundedEndLine >= actualStartLine else {
-                throw CodeReferenceSelectionError.invalidLineRange(totalLineCount: lines.count)
+                throw MCodeReferenceSelectionError.invalidLineRange(totalLineCount: lines.count)
             }
 
             return actualStartIndex..<boundedEndLine
@@ -229,9 +229,9 @@ private func selectedLineRanges(for reference: CodeReference, in lines: [String]
     }
 }
 
-extension URL {
-    func codeReferenceString(startLine: Int, endLine: Int) -> String {
-        CodeReference.multipleLines(
+public extension URL {
+    func MCodeReferenceString(startLine: Int, endLine: Int) -> String {
+        MCodeReference.multipleLines(
             url: self,
             start: startLine,
             end: endLine
@@ -329,7 +329,7 @@ nonisolated extension URL {
 #endif
 }
 
-func parseCodeReferences(from rawText: String) -> [CodeReference]? {
+func parseMCodeReferences(from rawText: String) -> [MCodeReference]? {
     let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
         return nil
@@ -345,14 +345,14 @@ func parseCodeReferences(from rawText: String) -> [CodeReference]? {
 
     let separatorCharacters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",，、;；"))
     if markerRanges.count > 1 {
-        var references: [CodeReference] = []
+        var references: [MCodeReference] = []
 
         for (index, markerRange) in markerRanges.enumerated() {
             let nextStart = index + 1 < markerRanges.count ? markerRanges[index + 1].lowerBound : trimmed.endIndex
             let rawSegment = String(trimmed[markerRange.lowerBound..<nextStart])
             let segment = rawSegment.trimmingCharacters(in: separatorCharacters)
 
-            guard let reference = CodeReference(segment) else {
+            guard let reference = MCodeReference(segment) else {
                 return nil
             }
 
@@ -362,7 +362,7 @@ func parseCodeReferences(from rawText: String) -> [CodeReference]? {
         return references.isEmpty ? nil : references
     }
 
-    if let singleReference = CodeReference(trimmed) {
+    if let singleReference = MCodeReference(trimmed) {
         return [singleReference]
     }
 

@@ -1,4 +1,4 @@
-// CodeReferenceTests.swift
+// MCodeReferenceTests.swift
 //  MarkdownExtendedViewTests
 //
 //  Created by OpenAI Codex on 2026-04-21.
@@ -7,34 +7,34 @@
 import XCTest
 @testable import MarkdownExtendedView
 
-final class CodeReferenceTests: XCTestCase {
+final class MCodeReferenceTests: XCTestCase {
 
     func testParsesEntireFileReference() {
-        let reference = CodeReference("file:///tmp/example.swift")
+        let reference = MCodeReference("file:///tmp/example.swift")
 
         XCTAssertEqual(reference, .entire(url: URL(fileURLWithPath: "/tmp/example.swift")))
     }
 
     func testParsesSingleLineReference() {
-        let reference = CodeReference("file:///tmp/example.swift:<12>")
+        let reference = MCodeReference("file:///tmp/example.swift:<12>")
 
         XCTAssertEqual(reference, .singleLine(url: URL(fileURLWithPath: "/tmp/example.swift"), line: 12))
     }
 
     func testParsesSingleLineReferenceWithoutAngleBrackets() {
-        let reference = CodeReference("file:///tmp/example.swift:12")
+        let reference = MCodeReference("file:///tmp/example.swift:12")
 
         XCTAssertEqual(reference, .singleLine(url: URL(fileURLWithPath: "/tmp/example.swift"), line: 12))
     }
 
     func testParsesMultiLineReference() {
-        let reference = CodeReference("file:///tmp/example.swift:<12>-<18>")
+        let reference = MCodeReference("file:///tmp/example.swift:<12>-<18>")
 
         XCTAssertEqual(reference, .multipleLines(url: URL(fileURLWithPath: "/tmp/example.swift"), start: 12, end: 18))
     }
 
     func testParsesMultiLineReferenceWithoutAngleBrackets() {
-        let reference = CodeReference("file:///Volumes/知阳/开发/Packges/JsonData/Sources/JsonData/ModelContext.swift:46-58")
+        let reference = MCodeReference("file:///Volumes/知阳/开发/Packges/JsonData/Sources/JsonData/ModelContext.swift:46-58")
 
         XCTAssertEqual(
             reference,
@@ -47,7 +47,7 @@ final class CodeReferenceTests: XCTestCase {
     }
 
     func testParsesMultipleSelectionsSeparatedByChineseDelimiter() {
-        let reference = CodeReference("file:///tmp/a.swift:12-13、16-19")
+        let reference = MCodeReference("file:///tmp/a.swift:12-13、16-19")
 
         XCTAssertEqual(
             reference,
@@ -59,7 +59,7 @@ final class CodeReferenceTests: XCTestCase {
     }
 
     func testParsesMultipleSelectionsSeparatedByComma() {
-        let reference = CodeReference("file:///tmp/a.swift:<12>-<13>,<16>-<19>")
+        let reference = MCodeReference("file:///tmp/a.swift:<12>-<13>,<16>-<19>")
 
         XCTAssertEqual(
             reference,
@@ -71,7 +71,7 @@ final class CodeReferenceTests: XCTestCase {
     }
 
     func testReferenceExposesDisplayMetadata() {
-        let reference = CodeReference("file:///tmp/example.swift:<8>-<9>")
+        let reference = MCodeReference("file:///tmp/example.swift:<8>-<9>")
 
         XCTAssertEqual(reference?.fileName, "example.swift")
         XCTAssertEqual(reference?.lineDescription, "Lines 8-9")
@@ -79,13 +79,13 @@ final class CodeReferenceTests: XCTestCase {
     }
 
     func testSelectionsExposeLineDescription() {
-        let reference = CodeReference("file:///tmp/a.swift:12-13、16-19")
+        let reference = MCodeReference("file:///tmp/a.swift:12-13、16-19")
 
         XCTAssertEqual(reference?.lineDescription, "Lines 12-13, 16-19")
     }
 
     func testParsesMultipleFileReferencesFromOneBlock() {
-        let references = parseCodeReferences(from: "file:///tmp/a.swift:12-13、file:///tmp/b.swift:16-19")
+        let references = parseMCodeReferences(from: "file:///tmp/a.swift:12-13、file:///tmp/b.swift:16-19")
 
         XCTAssertEqual(
             references,
@@ -97,7 +97,7 @@ final class CodeReferenceTests: XCTestCase {
     }
 
     func testParsesMultipleFileReferencesSeparatedByNewline() {
-        let references = parseCodeReferences(from: """
+        let references = parseMCodeReferences(from: """
         file:///tmp/a.swift:12-13
         file:///tmp/b.swift:16-19、file:///tmp/c.swift:20
         """)
@@ -114,8 +114,8 @@ final class CodeReferenceTests: XCTestCase {
 
     func testParsesFileReferencesWrappedInInlineCodeLines() {
         let references = [
-            parseCodeReferences(from: "file:///Volumes/知阳/开发/Packges/JsonData/Sources/JsonData/ModelContext.swift:46-58"),
-            parseCodeReferences(from: "file:///tmp/a.swift:12"),
+            parseMCodeReferences(from: "file:///Volumes/知阳/开发/Packges/JsonData/Sources/JsonData/ModelContext.swift:46-58"),
+            parseMCodeReferences(from: "file:///tmp/a.swift:12"),
         ]
 
         XCTAssertEqual(
@@ -132,9 +132,9 @@ final class CodeReferenceTests: XCTestCase {
     }
 
     func testInvalidReferenceReturnsNil() {
-        XCTAssertNil(CodeReference("print(\"hello\")"))
-        XCTAssertNil(CodeReference("https://example.com/file.swift"))
-        XCTAssertNil(CodeReference("file:///tmp/example.swift:abc"))
-        XCTAssertNil(CodeReference("file:///tmp/example.swift:12-"))
+        XCTAssertNil(MCodeReference("print(\"hello\")"))
+        XCTAssertNil(MCodeReference("https://example.com/file.swift"))
+        XCTAssertNil(MCodeReference("file:///tmp/example.swift:abc"))
+        XCTAssertNil(MCodeReference("file:///tmp/example.swift:12-"))
     }
 }
