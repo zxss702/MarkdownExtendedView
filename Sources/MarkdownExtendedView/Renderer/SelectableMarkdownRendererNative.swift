@@ -640,7 +640,7 @@ private final class SelectionModel {
     }
 
     func offset(from: SelectionTextPosition, to: SelectionTextPosition) -> Int {
-        layoutCollection.characterIndex(at: to) - layoutCollection.characterIndex(at: from)
+        (layoutCollection.characterIndex(at: to) ?? 0) - (layoutCollection.characterIndex(at: from) ?? 0)
     }
 
     var startPosition: SelectionTextPosition {
@@ -667,7 +667,7 @@ private final class SelectionModel {
     }
 
     func text(in range: SelectionTextRange) -> String {
-        attributedText(in: range).string
+        layoutCollection.plainText(in: range)
     }
 
     func attributedText(in range: SelectionTextRange) -> NSAttributedString {
@@ -752,6 +752,13 @@ private struct SelectionRect: Hashable {
         self.containsStart = containsStart
         self.containsEnd = containsEnd
     }
+}
+
+private struct SelectionPathComponents {
+    let layout: Int
+    let line: Int
+    let run: Int
+    let runSlice: Int
 }
 
 
@@ -1180,13 +1187,20 @@ private extension SelectionTextLayoutCollection {
         layouts.map(\.attributedString.length).reduce(0, +)
     }
 
-    func localCharacterRange(at indexPath: IndexPath) -> Range<Int> {
-        let line = layouts[indexPath.layout].lines[indexPath.line]
-        return line.runs[indexPath.run].slices[indexPath.runSlice].characterRange
+    func localCharacterRange(at indexPath: IndexPath) -> Range<Int>? {
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return nil
+        }
+
+        let line = layouts[components.layout].lines[components.line]
+        return line.runs[components.run].slices[components.runSlice].characterRange
     }
 
-    func localCharacterIndex(at position: SelectionTextPosition) -> Int {
-        let range = localCharacterRange(at: position.indexPath)
+    func localCharacterIndex(at position: SelectionTextPosition) -> Int? {
+        guard let range = localCharacterRange(at: position.indexPath) else {
+            return nil
+        }
+
         switch position.affinity {
         case .downstream:
             return range.lowerBound
@@ -1195,15 +1209,25 @@ private extension SelectionTextLayoutCollection {
         }
     }
 
-    func characterIndex(at position: SelectionTextPosition) -> Int {
-        let base = layouts.prefix(position.indexPath.layout)
+    func characterIndex(at position: SelectionTextPosition) -> Int? {
+        guard
+            let components = position.indexPath.selectionComponents,
+            let localCharacterIndex = localCharacterIndex(at: position)
+        else {
+            return nil
+        }
+
+        let base = layouts.prefix(components.layout)
             .map(\.attributedString.length)
             .reduce(0, +)
-        return base + localCharacterIndex(at: position)
+        return base + localCharacterIndex
     }
 
     func position(from position: SelectionTextPosition, offset: Int) -> SelectionTextPosition? {
-        let source = characterIndex(at: position)
+        guard let source = characterIndex(at: position) else {
+            return nil
+        }
+
         let target = source + offset
 
         guard (0...stringLength).contains(target) else {
@@ -1294,13 +1318,17 @@ private extension SelectionTextLayoutCollection {
     ) -> SelectionTextRange? {
         guard
             layouts.count == other.layouts.count,
+            let startLayout = range.start.indexPath.selectionComponents?.layout,
+            let startLocalCharacterIndex = other.localCharacterIndex(at: range.start),
             let start = position(
-                at: range.start.indexPath.layout,
-                localCharacterIndex: other.localCharacterIndex(at: range.start)
+                at: startLayout,
+                localCharacterIndex: startLocalCharacterIndex
             ),
+            let endLayout = range.end.indexPath.selectionComponents?.layout,
+            let endLocalCharacterIndex = other.localCharacterIndex(at: range.end),
             let end = position(
-                at: range.end.indexPath.layout,
-                localCharacterIndex: other.localCharacterIndex(at: range.end)
+                at: endLayout,
+                localCharacterIndex: endLocalCharacterIndex
             )
         else {
             return nil
@@ -1314,16 +1342,19 @@ private extension SelectionTextLayoutCollection {
 
         let result = NSMutableAttributedString()
 
-        let startLayout = range.start.indexPath.layout
-        let endLayout = range.end.indexPath.layout
-        guard layouts.indices.contains(startLayout), layouts.indices.contains(endLayout) else {
+        guard
+            let startLayout = range.start.indexPath.selectionComponents?.layout,
+            let endLayout = range.end.indexPath.selectionComponents?.layout,
+            layouts.indices.contains(startLayout),
+            layouts.indices.contains(endLayout)
+        else {
             return result
         }
 
         for layoutIndex in startLayout...endLayout {
             let attributedString = layouts[layoutIndex].attributedString
-            let lowerBound = layoutIndex == startLayout ? localCharacterIndex(at: range.start) : 0
-            let upperBound = layoutIndex == endLayout ? localCharacterIndex(at: range.end) : attributedString.length
+            let lowerBound = layoutIndex == startLayout ? (localCharacterIndex(at: range.start) ?? 0) : 0
+            let upperBound = layoutIndex == endLayout ? (localCharacterIndex(at: range.end) ?? attributedString.length) : attributedString.length
 
             if lowerBound < upperBound {
                 result.append(
@@ -1335,20 +1366,75 @@ private extension SelectionTextLayoutCollection {
         return result
     }
 
+    func plainText(in range: SelectionTextRange) -> String {
+        guard !range.isCollapsed else { return "" }
+
+        guard
+            let startLayout = range.start.indexPath.selectionComponents?.layout,
+            let endLayout = range.end.indexPath.selectionComponents?.layout,
+            layouts.indices.contains(startLayout),
+            layouts.indices.contains(endLayout)
+        else {
+            return ""
+        }
+
+        var text = ""
+        var previousLayoutIndex: Int?
+
+        for layoutIndex in startLayout...endLayout {
+            let attributedString = layouts[layoutIndex].attributedString
+            let lowerBound = layoutIndex == startLayout ? (localCharacterIndex(at: range.start) ?? 0) : 0
+            let upperBound = layoutIndex == endLayout ? (localCharacterIndex(at: range.end) ?? attributedString.length) : attributedString.length
+
+            guard lowerBound < upperBound else {
+                continue
+            }
+
+            let substring = attributedString.attributedSubstring(from: NSRange(lowerBound..<upperBound)).string
+            guard !substring.isEmpty else {
+                continue
+            }
+
+            if
+                let previousLayoutIndex,
+                let separator = plainTextSeparator(
+                    betweenLayoutAt: previousLayoutIndex,
+                    andLayoutAt: layoutIndex,
+                    existingText: text,
+                    upcomingText: substring
+                )
+            {
+                text += separator
+            }
+
+            text += substring
+            previousLayoutIndex = layoutIndex
+        }
+
+        return text
+    }
+
     func firstRect(for range: SelectionTextRange) -> CGRect {
         guard !range.isCollapsed else {
             return caretRect(for: range.start)
         }
 
         var firstRect = CGRect.null
-        let layout = range.start.indexPath.layout
-        let line = range.start.indexPath.line
+        guard let startComponents = range.start.indexPath.selectionComponents else {
+            return firstRect
+        }
+
+        let layout = startComponents.layout
+        let line = startComponents.line
 
         for indexPath in indexPathsForRunSlices(in: range) {
             guard indexPath.layout == layout, indexPath.line == line else {
                 break
             }
-            firstRect = firstRect.union(runSliceSelectionRect(at: indexPath))
+            guard let selectionRect = runSliceSelectionRect(at: indexPath) else {
+                continue
+            }
+            firstRect = firstRect.union(selectionRect)
         }
 
         return firstRect
@@ -1356,6 +1442,13 @@ private extension SelectionTextLayoutCollection {
 
     func selectionRects(for range: SelectionTextRange) -> [SelectionRect] {
         guard !range.isCollapsed else { return [] }
+
+        guard
+            let startComponents = range.start.indexPath.selectionComponents,
+            let endComponents = range.end.indexPath.selectionComponents
+        else {
+            return []
+        }
 
         let startX = caretRect(for: range.start).minX
         let endX = caretRect(for: range.end).minX
@@ -1377,14 +1470,16 @@ private extension SelectionTextLayoutCollection {
                 flushRects()
                 currentLayout = indexPath.layout
                 builder = .init(
-                    start: indexPath.layout == start.layout ? start : nil,
-                    end: indexPath.layout == end.layout ? end : nil,
+                    start: indexPath.layout == startComponents.layout ? start : nil,
+                    end: indexPath.layout == endComponents.layout ? end : nil,
                     startX: startX,
                     endX: endX
                 )
             }
 
-            let rect = runSliceSelectionRect(at: indexPath)
+            guard let rect = runSliceSelectionRect(at: indexPath) else {
+                continue
+            }
             let direction = layoutDirection(at: indexPath)
             builder?.appendRect(rect, layoutDirection: direction, line: indexPath.line)
         }
@@ -1400,8 +1495,12 @@ private extension SelectionTextLayoutCollection {
     }
 
     func layoutDirection(at indexPath: IndexPath) -> LayoutDirection {
-        let line = layouts[indexPath.layout].lines[indexPath.line]
-        return line.runs[indexPath.run].layoutDirection
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return .leftToRight
+        }
+
+        let line = layouts[components.layout].lines[components.line]
+        return line.runs[components.run].layoutDirection
     }
 
     func indexPathsForRunSlices(in range: SelectionTextRange) -> some Sequence<IndexPath> {
@@ -1413,8 +1512,13 @@ private extension SelectionTextLayoutCollection {
     }
 
     func caretRect(for position: SelectionTextPosition) -> CGRect {
-        let runSliceRect = runSliceRect(at: position.indexPath)
-        let lineRect = lineRect(at: position.indexPath)
+        guard
+            let runSliceRect = runSliceRect(at: position.indexPath),
+            let lineRect = lineRect(at: position.indexPath)
+        else {
+            return .zero
+        }
+
         let direction = layoutDirection(at: position.indexPath)
 
         let x =
@@ -1500,10 +1604,14 @@ private extension SelectionTextLayoutCollection {
         return SelectionTextRange(start: start, end: end)
     }
 
-    func runSliceSelectionRect(at indexPath: IndexPath) -> CGRect {
-        let layout = layouts[indexPath.layout]
-        let line = layout.lines[indexPath.line]
-        let runSlice = line.runs[indexPath.run].slices[indexPath.runSlice]
+    func runSliceSelectionRect(at indexPath: IndexPath) -> CGRect? {
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return nil
+        }
+
+        let layout = layouts[components.layout]
+        let line = layout.lines[components.line]
+        let runSlice = line.runs[components.run].slices[components.runSlice]
 
         var rect = runSlice.typographicBounds
         rect.origin.y = line.typographicBounds.minY
@@ -1512,15 +1620,23 @@ private extension SelectionTextLayoutCollection {
         return rect.offsetBy(dx: layout.origin.x, dy: layout.origin.y)
     }
 
-    private func runSliceRect(at indexPath: IndexPath) -> CGRect {
-        let layout = layouts[indexPath.layout]
-        let runSlice = layout.lines[indexPath.line].runs[indexPath.run].slices[indexPath.runSlice]
+    private func runSliceRect(at indexPath: IndexPath) -> CGRect? {
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return nil
+        }
+
+        let layout = layouts[components.layout]
+        let runSlice = layout.lines[components.line].runs[components.run].slices[components.runSlice]
         return runSlice.typographicBounds.offsetBy(dx: layout.origin.x, dy: layout.origin.y)
     }
 
-    private func lineRect(at indexPath: IndexPath) -> CGRect {
-        let layout = layouts[indexPath.layout]
-        let line = layout.lines[indexPath.line]
+    private func lineRect(at indexPath: IndexPath) -> CGRect? {
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return nil
+        }
+
+        let layout = layouts[components.layout]
+        let line = layout.lines[components.line]
         return line.typographicBounds.offsetBy(dx: layout.origin.x, dy: layout.origin.y)
     }
 
@@ -1540,29 +1656,33 @@ private extension SelectionTextLayoutCollection {
     }
 
     private func indexPathForRunSlice(after indexPath: IndexPath) -> IndexPath? {
-        let layout = layouts[indexPath.layout]
-        let line = layout.lines[indexPath.line]
-        let run = line.runs[indexPath.run]
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return nil
+        }
 
-        if indexPath.runSlice + 1 < run.slices.count {
+        let layout = layouts[components.layout]
+        let line = layout.lines[components.line]
+        let run = line.runs[components.run]
+
+        if components.runSlice + 1 < run.slices.count {
             return IndexPath(
-                runSlice: indexPath.runSlice + 1,
-                run: indexPath.run,
-                line: indexPath.line,
-                layout: indexPath.layout
+                runSlice: components.runSlice + 1,
+                run: components.run,
+                line: components.line,
+                layout: components.layout
             )
         }
 
-        if indexPath.run + 1 < line.runs.count {
-            return IndexPath(run: indexPath.run + 1, line: indexPath.line, layout: indexPath.layout)
+        if components.run + 1 < line.runs.count {
+            return IndexPath(run: components.run + 1, line: components.line, layout: components.layout)
         }
 
-        if indexPath.line + 1 < layout.lines.count {
-            return IndexPath(line: indexPath.line + 1, layout: indexPath.layout)
+        if components.line + 1 < layout.lines.count {
+            return IndexPath(line: components.line + 1, layout: components.layout)
         }
 
-        if indexPath.layout + 1 < layouts.count {
-            return IndexPath(layout: indexPath.layout + 1)
+        if components.layout + 1 < layouts.count {
+            return IndexPath(layout: components.layout + 1)
         }
 
         return nil
@@ -1593,40 +1713,44 @@ private extension SelectionTextLayoutCollection {
     }
 
     private func indexPathForRunSlice(before indexPath: IndexPath) -> IndexPath? {
-        if indexPath.runSlice > 0 {
+        guard let components = resolvedSelectionPath(for: indexPath) else {
+            return nil
+        }
+
+        if components.runSlice > 0 {
             return IndexPath(
-                runSlice: indexPath.runSlice - 1,
-                run: indexPath.run,
-                line: indexPath.line,
-                layout: indexPath.layout
+                runSlice: components.runSlice - 1,
+                run: components.run,
+                line: components.line,
+                layout: components.layout
             )
         }
 
-        if indexPath.run > 0 {
-            let previousRun = layouts[indexPath.layout].lines[indexPath.line].runs[indexPath.run - 1]
+        if components.run > 0 {
+            let previousRun = layouts[components.layout].lines[components.line].runs[components.run - 1]
             return IndexPath(
                 runSlice: previousRun.slices.endIndex - 1,
-                run: indexPath.run - 1,
-                line: indexPath.line,
-                layout: indexPath.layout
+                run: components.run - 1,
+                line: components.line,
+                layout: components.layout
             )
         }
 
-        if indexPath.line > 0 {
-            let previousLine = layouts[indexPath.layout].lines[indexPath.line - 1]
+        if components.line > 0 {
+            let previousLine = layouts[components.layout].lines[components.line - 1]
             let lastRunIndex = previousLine.runs.endIndex - 1
             let lastRun = previousLine.runs[lastRunIndex]
 
             return IndexPath(
                 runSlice: lastRun.slices.endIndex - 1,
                 run: lastRunIndex,
-                line: indexPath.line - 1,
-                layout: indexPath.layout
+                line: components.line - 1,
+                layout: components.layout
             )
         }
 
-        if indexPath.layout > 0 {
-            let previousLayout = layouts[indexPath.layout - 1]
+        if components.layout > 0 {
+            let previousLayout = layouts[components.layout - 1]
             let lastLineIndex = previousLayout.lines.endIndex - 1
             let lastLine = previousLayout.lines[lastLineIndex]
             let lastRunIndex = lastLine.runs.endIndex - 1
@@ -1636,8 +1760,66 @@ private extension SelectionTextLayoutCollection {
                 runSlice: lastRun.slices.endIndex - 1,
                 run: lastRunIndex,
                 line: lastLineIndex,
-                layout: indexPath.layout - 1
+                layout: components.layout - 1
             )
+        }
+
+        return nil
+    }
+
+    private func resolvedSelectionPath(for indexPath: IndexPath) -> SelectionPathComponents? {
+        guard
+            let components = indexPath.selectionComponents,
+            layouts.indices.contains(components.layout)
+        else {
+            return nil
+        }
+
+        let layout = layouts[components.layout]
+        guard layout.lines.indices.contains(components.line) else {
+            return nil
+        }
+
+        let line = layout.lines[components.line]
+        guard line.runs.indices.contains(components.run) else {
+            return nil
+        }
+
+        let run = line.runs[components.run]
+        guard run.slices.indices.contains(components.runSlice) else {
+            return nil
+        }
+
+        return components
+    }
+
+    private func plainTextSeparator(
+        betweenLayoutAt previousIndex: Int,
+        andLayoutAt currentIndex: Int,
+        existingText: String,
+        upcomingText: String
+    ) -> String? {
+        guard
+            layouts.indices.contains(previousIndex),
+            layouts.indices.contains(currentIndex)
+        else {
+            return nil
+        }
+
+        guard
+            let lastCharacter = existingText.last,
+            let nextCharacter = upcomingText.first,
+            !lastCharacter.isNewline,
+            !nextCharacter.isNewline
+        else {
+            return nil
+        }
+
+        let previousFrame = layouts[previousIndex].frame
+        let currentFrame = layouts[currentIndex].frame
+
+        if currentFrame.minY - previousFrame.maxY > 1 {
+            return "\n"
         }
 
         return nil
@@ -1718,20 +1900,33 @@ private struct SelectionRectBuilder {
 
 
 private extension IndexPath {
+    var selectionComponents: SelectionPathComponents? {
+        guard count >= 4 else {
+            return nil
+        }
+
+        return .init(
+            layout: self[0],
+            line: self[1],
+            run: self[2],
+            runSlice: self[3]
+        )
+    }
+
     var layout: Int {
-        self[0]
+        selectionComponents?.layout ?? 0
     }
 
     var line: Int {
-        self[1]
+        selectionComponents?.line ?? 0
     }
 
     var run: Int {
-        self[2]
+        selectionComponents?.run ?? 0
     }
 
     var runSlice: Int {
-        self[3]
+        selectionComponents?.runSlice ?? 0
     }
 
     init(runSlice: Int, run: Int, line: Int, layout: Int) {
