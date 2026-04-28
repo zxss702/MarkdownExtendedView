@@ -30,7 +30,7 @@ enum SelectionDocumentBuilder {
         from base: SwiftUI.Text.LayoutKey.Value,
         geometry: GeometryProxy
     ) -> [SelectionLayoutSnapshot] {
-        base.map {
+        base.compactMap {
             SelectionLayoutSnapshot(
                 base: $0.layout,
                 origin: geometry[$0.origin]
@@ -116,20 +116,52 @@ struct SelectionLayoutSnapshot {
     let frame: CGRect
     let lines: [SelectionLineSnapshot]
 
-    init(base: SwiftUI.Text.Layout, origin: CGPoint) {
+    init?(base: SwiftUI.Text.Layout, origin: CGPoint) {
         let contents = base.materializeSelectionContents()
         let joinedAttributedString = contents.attributedStrings.joinedForSelection()
+        guard joinedAttributedString.joined.length > 0 else {
+            return nil
+        }
 
         self.attributedString = joinedAttributedString.joined
-        self.frame = base.map(\.typographicBounds.rect)
-            .reduce(CGRect.null, CGRectUnion)
-            .offsetBy(dx: origin.x, dy: origin.y)
-        self.key = SelectionLayoutSnapshotKey(text: self.attributedString.string, frame: self.frame)
+        guard
+            let frame = SelectionLayoutSnapshot.makeFrame(from: base, origin: origin),
+            let key = SelectionLayoutSnapshotKey(text: self.attributedString.string, frame: frame)
+        else {
+            return nil
+        }
+
+        self.frame = frame
+        self.key = key
         self.lines = SelectionLayoutSnapshot.makeLines(
             from: base,
             contents: contents,
             origin: origin
         )
+    }
+
+    private static func makeFrame(from base: SwiftUI.Text.Layout, origin: CGPoint) -> CGRect? {
+        var frame = CGRect.null
+
+        for line in base {
+            let rect = line.typographicBounds.rect
+            guard rect.isFiniteForSelection else {
+                continue
+            }
+
+            frame = frame.union(rect)
+        }
+
+        guard !frame.isNull else {
+            return nil
+        }
+
+        let offsetFrame = frame.offsetBy(dx: origin.x, dy: origin.y)
+        guard offsetFrame.isFiniteForSelection else {
+            return nil
+        }
+
+        return offsetFrame
     }
 
     private static func makeLines(
@@ -172,16 +204,34 @@ struct SelectionLayoutSnapshotKey: Hashable {
     let width: Int
     let height: Int
 
-    init(text: String, frame: CGRect) {
+    init?(text: String, frame: CGRect) {
         self.text = text
-        self.minX = Self.rounded(frame.minX)
-        self.minY = Self.rounded(frame.minY)
-        self.width = Self.rounded(frame.width)
-        self.height = Self.rounded(frame.height)
+        guard
+            let minX = Self.rounded(frame.minX),
+            let minY = Self.rounded(frame.minY),
+            let width = Self.rounded(frame.width),
+            let height = Self.rounded(frame.height)
+        else {
+            return nil
+        }
+
+        self.minX = minX
+        self.minY = minY
+        self.width = width
+        self.height = height
     }
 
-    private static func rounded(_ value: CGFloat) -> Int {
-        Int((value * 2).rounded(.toNearestOrEven))
+    private static func rounded(_ value: CGFloat) -> Int? {
+        let scaled = (value * 2).rounded(.toNearestOrEven)
+        guard
+            scaled.isFinite,
+            scaled >= CGFloat(Int.min),
+            scaled <= CGFloat(Int.max)
+        else {
+            return nil
+        }
+
+        return Int(scaled)
     }
 }
 
@@ -426,5 +476,14 @@ private extension Array where Element == NSAttributedString {
 private extension Range where Bound == Int {
     func offsetBySelection(by value: Int) -> Range<Int> {
         (lowerBound + value)..<(upperBound + value)
+    }
+}
+
+private extension CGRect {
+    var isFiniteForSelection: Bool {
+        origin.x.isFinite &&
+            origin.y.isFinite &&
+            size.width.isFinite &&
+            size.height.isFinite
     }
 }
