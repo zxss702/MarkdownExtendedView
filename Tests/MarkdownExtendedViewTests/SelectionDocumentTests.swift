@@ -4,7 +4,7 @@ import XCTest
 final class SelectionDocumentTests: XCTestCase {
 
     func testSelectionLayoutSnapshotKeyRejectsNonFiniteFrame() {
-        let frame = CGRect(x: .infinity, y: 0, width: 12, height: 16)
+        let frame = CGRect(x: CGFloat.infinity, y: 0, width: 12, height: 16)
 
         XCTAssertNil(SelectionLayoutSnapshotKey(text: "Hello", frame: frame))
     }
