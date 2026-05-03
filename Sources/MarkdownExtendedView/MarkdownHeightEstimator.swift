@@ -97,7 +97,7 @@ enum MarkdownHeightEstimator {
             return estimateFlowHeight(items: items, maxWidth: width, fallbackLineHeight: theme.bodyFont.markdownLineHeight)
         }
 
-        if containsLinks(paragraph) || containsImages(paragraph) {
+        if containsLinks(paragraph) || containsImages(paragraph) || containsInlineMCodeReferences(paragraph) {
             let items = paragraph.children.flatMap { flowItems(for: $0, theme: theme, maxWidth: width) }
             return estimateFlowHeight(items: items, maxWidth: width, fallbackLineHeight: theme.bodyFont.markdownLineHeight)
         }
@@ -272,6 +272,9 @@ enum MarkdownHeightEstimator {
             return [.text(extractPlainText(from: link), font: theme.bodyFont)]
 
         case let code as InlineCode:
+            if let references = parseMCodeReferences(from: code.code), references.count == 1 {
+                return [.box(size: mCodeReferenceInlineSize(theme: theme))]
+            }
             return [.text(code.code, font: theme.codeFont)]
 
         case _ as SoftBreak:
@@ -424,11 +427,28 @@ enum MarkdownHeightEstimator {
         return false
     }
 
+    private static func containsInlineMCodeReferences(_ parent: any Markup) -> Bool {
+        for child in parent.children {
+            if let code = child as? InlineCode, parseMCodeReferences(from: code.code)?.isEmpty == false {
+                return true
+            }
+            if containsInlineMCodeReferences(child) { return true }
+        }
+        return false
+    }
+
     private static func extractPlainText(from markup: any Markup) -> String {
         if let plainText = markup as? any PlainTextConvertibleMarkup {
             return plainText.plainText
         }
         return markup.children.map { extractPlainText(from: $0) }.joined()
+    }
+
+    private static func mCodeReferenceInlineSize(theme: MarkdownTheme) -> CGSize {
+        let titleHeight = theme.codeFont.markdownLineHeight
+        let lineNumberHeight = max(theme.codeFont.pointSize - 4, 8)
+        let contentHeight = max(titleHeight, lineNumberHeight, 12)
+        return CGSize(width: 160, height: ceil(contentHeight + 8))
     }
 }
 

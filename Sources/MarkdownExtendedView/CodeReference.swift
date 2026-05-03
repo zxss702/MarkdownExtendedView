@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Markdown
 
 public let canonicalMCodeReferenceFormat = "`file:///.../name:<start>-<end>`"
 
@@ -332,6 +333,10 @@ nonisolated extension URL {
 func parseMCodeReferences(from rawText: String) -> [MCodeReference]? {
     let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
+        return nil
+    }
+
+    guard trimmed.hasPrefix("file://") else {
         return nil
     }
 

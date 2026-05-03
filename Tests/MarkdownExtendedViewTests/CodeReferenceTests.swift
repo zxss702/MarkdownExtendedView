@@ -131,6 +131,12 @@ final class MCodeReferenceTests: XCTestCase {
         )
     }
 
+    func testOnlyFileSchemeTriggersReferenceParsing() {
+        XCTAssertNil(parseMCodeReferences(from: "/tmp/a.swift:12"))
+        XCTAssertNil(parseMCodeReferences(from: "~/tmp/a.swift:12"))
+        XCTAssertNil(parseMCodeReferences(from: "https://example.com/a.swift:12"))
+    }
+
     func testInvalidReferenceReturnsNil() {
         XCTAssertNil(MCodeReference("print(\"hello\")"))
         XCTAssertNil(MCodeReference("https://example.com/file.swift"))

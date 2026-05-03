@@ -78,8 +78,6 @@ struct MarkdownRenderer: View {
             // This is a display LaTeX block
             let latex = String(plainText.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
             LaTeXView(latex: latex, isBlock: true, theme: theme)
-        } else if let references = inlineMCodeReferences(in: paragraph), !references.isEmpty {
-            renderMCodeReferences(references)
         } else {
             renderInlineChildren(paragraph)
                 .font(theme.bodySwiftUIFont)
@@ -105,13 +103,8 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderRegularCodeBlock(_ codeBlock: CodeBlock) -> some View {
-        let normalizedCode = codeBlock.code.trimmingCharacters(in: .whitespacesAndNewlines)
-        let references = parseMCodeReferences(from: normalizedCode)
-
         Group {
-            if let references, !references.isEmpty {
-                renderMCodeReferences(references)
-            } else if codeBlock.language != nil {
+            if codeBlock.language != nil {
                 HighlightedCodeView(
                     code: codeBlock.code,
                     language: codeBlock.language,
@@ -123,7 +116,7 @@ struct MarkdownRenderer: View {
                     .foregroundColor(theme.textColor)
             }
         }
-        .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: references != nil))
+        .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: false))
     }
 
     @ViewBuilder
@@ -321,6 +314,10 @@ struct MarkdownRenderer: View {
             return AnyView(renderTextWithLaTeX(parent))
         }
 
+        if containsInlineMCodeReferences(parent) {
+            return AnyView(renderTextWithLinks(parent))
+        }
+
         if containsLinks(parent) {
             return AnyView(renderTextWithLinks(parent))
         }
@@ -337,6 +334,16 @@ struct MarkdownRenderer: View {
         for child in parent.children {
             if child is Markdown.Link { return true }
             if containsLinks(child) { return true }
+        }
+        return false
+    }
+
+    private func containsInlineMCodeReferences(_ parent: any Markup) -> Bool {
+        for child in parent.children {
+            if let code = child as? InlineCode, parseMCodeReferences(from: code.code)?.isEmpty == false {
+                return true
+            }
+            if containsInlineMCodeReferences(child) { return true }
         }
         return false
     }
@@ -558,32 +565,6 @@ struct MarkdownRenderer: View {
         return markup.children.map { extractPlainText(from: $0) }.joined()
     }
 
-    private func inlineMCodeReferences(in paragraph: Paragraph) -> [MCodeReference]? {
-        var references: [MCodeReference] = []
-
-        for child in paragraph.children {
-            switch child {
-            case let inlineCode as InlineCode:
-                guard let parsed = parseMCodeReferences(from: inlineCode.code), !parsed.isEmpty else {
-                    return nil
-                }
-                references.append(contentsOf: parsed)
-
-            case let text as Markdown.Text:
-                guard text.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    return nil
-                }
-
-            case _ as SoftBreak, _ as LineBreak:
-                continue
-
-            default:
-                return nil
-            }
-        }
-
-        return references.isEmpty ? nil : references
-    }
 }
 
 private struct CodeBlockContainerModifier: ViewModifier {
