@@ -94,12 +94,22 @@ enum MarkdownHeightEstimator {
             let items = LaTeXPreprocessor.extractSegments(from: plainText).flatMap {
                 flowItems(for: $0, theme: theme, maxWidth: width)
             }
-            return estimateFlowHeight(items: items, maxWidth: width, fallbackLineHeight: theme.bodyFont.markdownLineHeight)
+            return estimateFlowHeight(
+                items: items,
+                maxWidth: width,
+                fallbackLineHeight: theme.bodyFont.markdownLineHeight,
+                lineSpacing: theme.paragraphSpacing
+            )
         }
 
         if containsLinks(paragraph) || containsImages(paragraph) || containsInlineMCodeReferences(paragraph) {
             let items = paragraph.children.flatMap { flowItems(for: $0, theme: theme, maxWidth: width) }
-            return estimateFlowHeight(items: items, maxWidth: width, fallbackLineHeight: theme.bodyFont.markdownLineHeight)
+            return estimateFlowHeight(
+                items: items,
+                maxWidth: width,
+                fallbackLineHeight: theme.bodyFont.markdownLineHeight,
+                lineSpacing: theme.paragraphSpacing
+            )
         }
 
         return measureText(
@@ -324,7 +334,12 @@ enum MarkdownHeightEstimator {
         }
     }
 
-    private static func estimateFlowHeight(items: [FlowItem], maxWidth: CGFloat, fallbackLineHeight: CGFloat) -> CGFloat {
+    private static func estimateFlowHeight(
+        items: [FlowItem],
+        maxWidth: CGFloat,
+        fallbackLineHeight: CGFloat,
+        lineSpacing: CGFloat
+    ) -> CGFloat {
         guard !items.isEmpty else { return ceil(fallbackLineHeight) }
 
         var currentWidth: CGFloat = 0
@@ -332,10 +347,12 @@ enum MarkdownHeightEstimator {
         var maxDescent: CGFloat = 0
         var hasLine = false
         var totalHeight: CGFloat = 0
+        var lineCount = 0
 
         func flushLine() {
             guard hasLine else { return }
-            totalHeight += maxAscent + maxDescent
+            totalHeight += max(maxAscent + maxDescent, fallbackLineHeight)
+            lineCount += 1
             currentWidth = 0
             maxAscent = 0
             maxDescent = 0
@@ -347,7 +364,8 @@ enum MarkdownHeightEstimator {
                 if hasLine {
                     flushLine()
                 } else {
-                    totalHeight += item.size.height
+                    totalHeight += max(item.size.height, fallbackLineHeight)
+                    lineCount += 1
                 }
                 continue
             }
@@ -364,6 +382,7 @@ enum MarkdownHeightEstimator {
         }
 
         flushLine()
+        totalHeight += lineSpacing * CGFloat(max(0, lineCount - 1))
         return ceil(max(totalHeight, fallbackLineHeight))
     }
 

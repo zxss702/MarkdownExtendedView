@@ -53,5 +53,9 @@ final class MarkdownExtendedViewTests: XCTestCase {
 
         XCTAssertGreaterThan(narrowHeight, wideHeight)
         XCTAssertGreaterThan(narrowHeight, theme.bodyFont.markdownLineHeight * 3)
+        XCTAssertGreaterThan(
+            narrowHeight,
+            theme.bodyFont.markdownLineHeight * 3 + theme.paragraphSpacing * 2
+        )
     }
 }

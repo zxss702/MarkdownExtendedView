@@ -360,7 +360,11 @@ struct MarkdownRenderer: View {
     /// Renders text with images using flow layout.
     @ViewBuilder
     private func renderTextWithImages(_ parent: any Markup) -> some View {
-        FlowLayout(spacing: 0) {
+        FlowLayout(
+            spacing: 0,
+            lineSpacing: theme.paragraphSpacing,
+            minimumLineHeight: theme.bodyFont.markdownLineHeight
+        ) {
             let elements = flowInlineElements(from: parent)
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
                 renderInlineFlowElement(element)
@@ -371,7 +375,11 @@ struct MarkdownRenderer: View {
     /// Renders text with clickable links using flow layout.
     @ViewBuilder
     private func renderTextWithLinks(_ parent: any Markup) -> some View {
-        FlowLayout(spacing: 0) {
+        FlowLayout(
+            spacing: 0,
+            lineSpacing: theme.paragraphSpacing,
+            minimumLineHeight: theme.bodyFont.markdownLineHeight
+        ) {
             let elements = flowInlineElements(from: parent)
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
                 renderInlineFlowElement(element)
@@ -424,7 +432,11 @@ struct MarkdownRenderer: View {
     private func renderTextWithLaTeX(_ parent: any Markup) -> some View {
         let plainText = extractPlainText(from: parent)
 
-        FlowLayout(spacing: 0) {
+        FlowLayout(
+            spacing: 0,
+            lineSpacing: theme.paragraphSpacing,
+            minimumLineHeight: theme.bodyFont.markdownLineHeight
+        ) {
             let elements = flowInlineElements(from: LaTeXPreprocessor.extractSegments(from: plainText))
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
                 renderInlineFlowElement(element)
@@ -649,6 +661,8 @@ extension View {
 /// A simple flow layout for mixed text and views.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 0
+    var lineSpacing: CGFloat = 0
+    var minimumLineHeight: CGFloat = 0
 
     private struct MeasuredSubview {
         let size: CGSize
@@ -665,6 +679,14 @@ struct FlowLayout: Layout {
 
         var height: CGFloat {
             maxAscent + maxDescent
+        }
+
+        func resolvedHeight(minimumLineHeight: CGFloat) -> CGFloat {
+            max(height, minimumLineHeight)
+        }
+
+        func verticalInset(minimumLineHeight: CGFloat) -> CGFloat {
+            max(0, resolvedHeight(minimumLineHeight: minimumLineHeight) - height) / 2
         }
     }
 
@@ -708,19 +730,20 @@ struct FlowLayout: Layout {
 
         for line in lines {
             var currentX: CGFloat = 0
+            let lineTopInset = line.verticalInset(minimumLineHeight: minimumLineHeight)
 
             for index in line.indices {
                 let item = measured[index]
-                let y = currentY + (line.maxAscent - item.baseline)
+                let y = currentY + lineTopInset + (line.maxAscent - item.baseline)
                 positions[index] = CGPoint(x: currentX, y: y)
                 currentX += item.size.width + spacing
             }
 
             totalWidth = max(totalWidth, line.width)
-            currentY += line.height + spacing
+            currentY += line.resolvedHeight(minimumLineHeight: minimumLineHeight) + lineSpacing
         }
 
-        let totalHeight = max(0, currentY - spacing)
+        let totalHeight = max(0, currentY - lineSpacing)
         return (CGSize(width: totalWidth, height: totalHeight), positions, measured)
     }
 
