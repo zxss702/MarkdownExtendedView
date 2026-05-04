@@ -91,8 +91,8 @@ enum MarkdownHeightEstimator {
         }
 
         if LaTeXPreprocessor.containsLaTeX(plainText) {
-            let items = LaTeXPreprocessor.extractSegments(from: plainText).map {
-                flowItem(for: $0, theme: theme, maxWidth: width)
+            let items = LaTeXPreprocessor.extractSegments(from: plainText).flatMap {
+                flowItems(for: $0, theme: theme, maxWidth: width)
             }
             return estimateFlowHeight(items: items, maxWidth: width, fallbackLineHeight: theme.bodyFont.markdownLineHeight)
         }
@@ -260,25 +260,25 @@ enum MarkdownHeightEstimator {
     private static func flowItems(for element: any Markup, theme: MarkdownTheme, maxWidth: CGFloat) -> [FlowItem] {
         switch element {
         case let text as Markdown.Text:
-            return [.text(text.string, font: theme.bodyFont)]
+            return textFlowItems(text.string, font: theme.bodyFont)
 
         case let strong as Strong:
-            return [.text(extractPlainText(from: strong), font: theme.bodyFont)]
+            return textFlowItems(extractPlainText(from: strong), font: theme.bodyFont)
 
         case let emphasis as Emphasis:
-            return [.text(extractPlainText(from: emphasis), font: theme.bodyFont)]
+            return textFlowItems(extractPlainText(from: emphasis), font: theme.bodyFont)
 
         case let link as Markdown.Link:
-            return [.text(extractPlainText(from: link), font: theme.bodyFont)]
+            return textFlowItems(extractPlainText(from: link), font: theme.bodyFont)
 
         case let code as InlineCode:
             if let references = parseMCodeReferences(from: code.code), references.count == 1 {
                 return [.box(size: mCodeReferenceInlineSize(theme: theme))]
             }
-            return [.text(code.code, font: theme.codeFont)]
+            return textFlowItems(code.code, font: theme.codeFont)
 
         case _ as SoftBreak:
-            return [.text(" ", font: theme.bodyFont)]
+            return textFlowItems(" ", font: theme.bodyFont)
 
         case _ as LineBreak:
             return [.forcedBreak(lineHeight: theme.bodyFont.markdownLineHeight)]
@@ -288,20 +288,20 @@ enum MarkdownHeightEstimator {
 
         default:
             if let plain = element as? any PlainTextConvertibleMarkup {
-                return [.text(plain.plainText, font: theme.bodyFont)]
+                return textFlowItems(plain.plainText, font: theme.bodyFont)
             }
             return []
         }
     }
 
-    private static func flowItem(
+    private static func flowItems(
         for segment: LaTeXPreprocessor.Segment,
         theme: MarkdownTheme,
         maxWidth: CGFloat
-    ) -> FlowItem {
+    ) -> [FlowItem] {
         switch segment {
         case .text(let text):
-            return .text(text, font: theme.bodyFont)
+            return textFlowItems(text, font: theme.bodyFont)
         case .latex(let latex, _):
             let size = measureFormula(
                 latex,
@@ -309,7 +309,13 @@ enum MarkdownHeightEstimator {
                 mode: .text,
                 maxWidth: maxWidth
             )
-            return .box(size: size)
+            return [.box(size: size)]
+        }
+    }
+
+    private static func textFlowItems(_ text: String, font: MarkdownNativeFont) -> [FlowItem] {
+        MarkdownInlineTextWrapping.units(in: text).map {
+            .text($0, font: font)
         }
     }
 

@@ -16,4 +16,36 @@ final class MarkdownExtendedViewTests: XCTestCase {
         let displayLatex = "$$E = mc^2$$"
         XCTAssertTrue(displayLatex.contains("$$"))
     }
+
+    @MainActor
+    func testWidthAwareSnapshotEstimatesWrappedParagraphHeight() async throws {
+        let content = """
+        它像这套 SwiftUI 应用的中枢神经。NavigationObserver 是一个运行在主线程、可被界面观察的全局状态对象，专门替 UI 统一保管工作区状态：当前项目目录、AI 通信记录、侧栏与编辑器状态、搜索、网页和 AI 对话。
+        """
+        let theme = MarkdownTheme.default
+        let narrow = await MarkdownRenderSnapshot.parse(content, width: 180, theme: theme)
+        let wide = await MarkdownRenderSnapshot.parse(content, width: 1200, theme: theme)
+
+        let narrowHeight = try XCTUnwrap(narrow.estimatedHeight)
+        let wideHeight = try XCTUnwrap(wide.estimatedHeight)
+
+        XCTAssertGreaterThan(narrowHeight, wideHeight)
+        XCTAssertGreaterThan(narrowHeight, theme.bodyFont.markdownLineHeight * 2)
+    }
+
+    @MainActor
+    func testWidthAwareSnapshotWrapsParagraphsWithInlineCodeReferences() async throws {
+        let content = """
+        它像这套 SwiftUI 应用的中枢神经，专门替 UI 统一保管工作区状态：当前项目目录、AI 通信记录、侧栏与编辑器状态、搜索、网页和 AI 对话。`file:///tmp/NavigationObserver.swift:12` 再往里看，它管得很复杂，但脉络很清。
+        """
+        let theme = MarkdownTheme.default
+        let narrow = await MarkdownRenderSnapshot.parse(content, width: 220, theme: theme)
+        let wide = await MarkdownRenderSnapshot.parse(content, width: 1400, theme: theme)
+
+        let narrowHeight = try XCTUnwrap(narrow.estimatedHeight)
+        let wideHeight = try XCTUnwrap(wide.estimatedHeight)
+
+        XCTAssertGreaterThan(narrowHeight, wideHeight)
+        XCTAssertGreaterThan(narrowHeight, theme.bodyFont.markdownLineHeight * 3)
+    }
 }

@@ -361,8 +361,9 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderTextWithImages(_ parent: any Markup) -> some View {
         FlowLayout(spacing: 0) {
-            ForEach(Array(parent.children.enumerated()), id: \.offset) { _, child in
-                renderInlineElementAsView(child)
+            let elements = flowInlineElements(from: parent)
+            ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
+                renderInlineFlowElement(element)
             }
         }
     }
@@ -371,29 +372,22 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderTextWithLinks(_ parent: any Markup) -> some View {
         FlowLayout(spacing: 0) {
-            ForEach(Array(parent.children.enumerated()), id: \.offset) { _, child in
-                renderInlineElementAsView(child)
+            let elements = flowInlineElements(from: parent)
+            ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
+                renderInlineFlowElement(element)
             }
         }
     }
 
-    /// Renders an inline element as a View (for use in flow layout with links).
+    /// Renders an inline flow element as a View.
     @ViewBuilder
-    private func renderInlineElementAsView(_ element: any Markup) -> some View {
+    private func renderInlineFlowElement(_ element: InlineFlowElement) -> some View {
         switch element {
-        case let text as Markdown.Text:
-            SwiftUI.Text(text.string)
-                .font(theme.bodySwiftUIFont)
-                .foregroundColor(theme.textColor)
+        case .text(let text, let style):
+            styledText(text, style: style)
                 .selectionTextPassThrough()
 
-        case let strong as Strong:
-            renderStrongAsView(strong)
-
-        case let emphasis as Emphasis:
-            renderEmphasisAsView(emphasis)
-
-        case let link as Markdown.Link:
+        case .link(let link):
             TappableLinkView(
                 link: link,
                 theme: theme,
@@ -401,97 +395,40 @@ struct MarkdownRenderer: View {
                 baseURL: baseURL
             )
 
-        case let code as InlineCode:
-            if let references = parseMCodeReferences(from: code.code), references.count == 1, let reference = references.first {
-                MCodeReferenceBlockView(
-                    reference: reference,
-                    theme: theme,
-                    tapHandler: MCodeReferenceHandler
-                )
-            } else {
-                SwiftUI.Text(code.code)
-                    .font(theme.codeSwiftUIFont)
-                    .foregroundColor(theme.textColor)
-                    .selectionTextPassThrough()
-            }
+        case .codeReference(let reference):
+            MCodeReferenceBlockView(
+                reference: reference,
+                theme: theme,
+                tapHandler: MCodeReferenceHandler
+            )
 
-        case _ as SoftBreak:
-            SwiftUI.Text(" ")
-                .font(theme.bodySwiftUIFont)
-                .foregroundColor(theme.textColor)
-                .selectionTextPassThrough()
-
-        case _ as LineBreak:
-            SwiftUI.Text("\n")
-                .font(theme.bodySwiftUIFont)
-                .foregroundColor(theme.textColor)
-                .selectionTextPassThrough()
-
-        case let image as Markdown.Image:
+        case .image(let image):
             MarkdownImageView(
                 image: image,
                 theme: theme,
                 baseURL: baseURL
             )
 
-        default:
-            if let plainText = element as? any PlainTextConvertibleMarkup {
-                SwiftUI.Text(plainText.plainText)
-                    .font(theme.bodySwiftUIFont)
-                    .foregroundColor(theme.textColor)
-                    .selectionTextPassThrough()
-            }
+        case .latex(let latex, let isBlock):
+            LaTeXView(latex: latex, isBlock: isBlock, theme: theme)
+
+        case .lineBreak:
+            Color.clear
+                .frame(width: 0, height: theme.bodyFont.markdownLineHeight)
+                .layoutValue(key: FlowLineBreakLayoutValueKey.self, value: true)
         }
-    }
-
-    /// Helper for rendering Strong in flow layout (simplified to avoid type inference issues).
-    @ViewBuilder
-    private func renderStrongAsView(_ strong: Strong) -> some View {
-        // Simplified: render plain text with bold styling
-        SwiftUI.Text(extractPlainText(from: strong))
-            .bold()
-            .font(theme.bodySwiftUIFont)
-            .foregroundColor(theme.textColor)
-            .selectionTextPassThrough()
-    }
-
-    /// Helper for rendering Emphasis in flow layout (simplified to avoid type inference issues).
-    @ViewBuilder
-    private func renderEmphasisAsView(_ emphasis: Emphasis) -> some View {
-        // Simplified: render plain text with italic styling
-        SwiftUI.Text(extractPlainText(from: emphasis))
-            .italic()
-            .font(theme.bodySwiftUIFont)
-            .foregroundColor(theme.textColor)
-            .selectionTextPassThrough()
     }
 
     /// Renders text that may contain inline LaTeX.
     @ViewBuilder
     private func renderTextWithLaTeX(_ parent: any Markup) -> some View {
         let plainText = extractPlainText(from: parent)
-        let segments = LaTeXPreprocessor.extractSegments(from: plainText)
 
-        // Use a flow layout to handle mixed text and LaTeX
         FlowLayout(spacing: 0) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { item in
-                renderSegment(item.element)
+            let elements = flowInlineElements(from: LaTeXPreprocessor.extractSegments(from: plainText))
+            ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
+                renderInlineFlowElement(element)
             }
-        }
-    }
-
-    /// Renders a single LaTeX segment.
-    @ViewBuilder
-    private func renderSegment(_ segment: LaTeXPreprocessor.Segment) -> some View {
-        switch segment {
-        case .text(let text):
-            SwiftUI.Text(text)
-                .font(theme.bodySwiftUIFont)
-                .foregroundColor(theme.textColor)
-                .selectionTextPassThrough()
-
-        case .latex(let latex, let isBlock):
-            LaTeXView(latex: latex, isBlock: isBlock, theme: theme)
         }
     }
 
@@ -565,6 +502,95 @@ struct MarkdownRenderer: View {
         return markup.children.map { extractPlainText(from: $0) }.joined()
     }
 
+    private func flowInlineElements(from parent: any Markup) -> [InlineFlowElement] {
+        parent.children.flatMap {
+            flowInlineElements(from: $0, style: [])
+        }
+    }
+
+    private func flowInlineElements(
+        from element: any Markup,
+        style: InlineTextStyle
+    ) -> [InlineFlowElement] {
+        switch element {
+        case let text as Markdown.Text:
+            return textInlineFlowElements(text.string, style: style)
+
+        case let strong as Strong:
+            return strong.children.flatMap {
+                flowInlineElements(from: $0, style: style.union(.bold))
+            }
+
+        case let emphasis as Emphasis:
+            return emphasis.children.flatMap {
+                flowInlineElements(from: $0, style: style.union(.italic))
+            }
+
+        case let strikethrough as Strikethrough:
+            return strikethrough.children.flatMap {
+                flowInlineElements(from: $0, style: style.union(.strikethrough))
+            }
+
+        case let link as Markdown.Link:
+            return [.link(link)]
+
+        case let code as InlineCode:
+            if let references = parseMCodeReferences(from: code.code), references.count == 1, let reference = references.first {
+                return [.codeReference(reference)]
+            }
+            return textInlineFlowElements(code.code, style: style.union(.code))
+
+        case _ as SoftBreak:
+            return textInlineFlowElements(" ", style: style)
+
+        case _ as LineBreak:
+            return [.lineBreak]
+
+        case let image as Markdown.Image:
+            return [.image(image)]
+
+        default:
+            if let plainText = element as? any PlainTextConvertibleMarkup {
+                return textInlineFlowElements(plainText.plainText, style: style)
+            }
+            return []
+        }
+    }
+
+    private func flowInlineElements(from segments: [LaTeXPreprocessor.Segment]) -> [InlineFlowElement] {
+        segments.flatMap { segment in
+            switch segment {
+            case .text(let text):
+                return textInlineFlowElements(text, style: [])
+            case .latex(let latex, let isBlock):
+                return [.latex(latex, isBlock)]
+            }
+        }
+    }
+
+    private func textInlineFlowElements(_ text: String, style: InlineTextStyle) -> [InlineFlowElement] {
+        MarkdownInlineTextWrapping.units(in: text).map {
+            .text($0, style)
+        }
+    }
+
+    private func styledText(_ text: String, style: InlineTextStyle) -> SwiftUI.Text {
+        var result = SwiftUI.Text(text)
+
+        if style.contains(.bold) {
+            result = result.bold()
+        }
+        if style.contains(.italic) {
+            result = result.italic()
+        }
+        if style.contains(.strikethrough) {
+            result = result.strikethrough()
+        }
+
+        result = result.font(style.contains(.code) ? theme.codeSwiftUIFont : theme.bodySwiftUIFont)
+        return result.foregroundColor(theme.textColor)
+    }
+
 }
 
 private struct CodeBlockContainerModifier: ViewModifier {
@@ -627,6 +653,8 @@ struct FlowLayout: Layout {
     private struct MeasuredSubview {
         let size: CGSize
         let baseline: CGFloat
+        let proposal: ProposedViewSize
+        let isForcedBreak: Bool
     }
 
     private struct Line {
@@ -651,22 +679,35 @@ struct FlowLayout: Layout {
         for (index, subview) in subviews.enumerated() {
             if index < result.positions.count {
                 let position = result.positions[index]
-                subview.place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+                let measured = result.measured[index]
+                subview.place(
+                    at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
+                    proposal: measured.proposal
+                )
             }
         }
     }
 
-    private func computeLayout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+    private func computeLayout(
+        proposal: ProposedViewSize,
+        subviews: Subviews
+    ) -> (size: CGSize, positions: [CGPoint], measured: [MeasuredSubview]) {
         guard !subviews.isEmpty else {
-            return (.zero, [])
+            return (.zero, [], [])
         }
 
-        let maxWidth = proposal.width ?? .infinity
+        let maxWidth = max(proposal.width ?? .infinity, 1)
         let measured = subviews.map { subview -> MeasuredSubview in
-            let size = subview.sizeThatFits(.unspecified)
-            let dimensions = subview.dimensions(in: .unspecified)
+            let measurementProposal = measurementProposal(for: subview, maxWidth: maxWidth)
+            let size = subview.sizeThatFits(measurementProposal)
+            let dimensions = subview.dimensions(in: measurementProposal)
             let baseline = resolvedBaseline(from: dimensions, size: size)
-            return MeasuredSubview(size: size, baseline: baseline)
+            return MeasuredSubview(
+                size: size,
+                baseline: baseline,
+                proposal: measurementProposal,
+                isForcedBreak: subview[FlowLineBreakLayoutValueKey.self]
+            )
         }
 
         let lines = computeLines(measured: measured, maxWidth: maxWidth)
@@ -689,7 +730,7 @@ struct FlowLayout: Layout {
         }
 
         let totalHeight = max(0, currentY - spacing)
-        return (CGSize(width: totalWidth, height: totalHeight), positions)
+        return (CGSize(width: totalWidth, height: totalHeight), positions, measured)
     }
 
     private func computeLines(measured: [MeasuredSubview], maxWidth: CGFloat) -> [Line] {
@@ -716,6 +757,22 @@ struct FlowLayout: Layout {
         }
 
         for (index, item) in measured.enumerated() {
+            if item.isForcedBreak {
+                if currentIndices.isEmpty {
+                    lines.append(
+                        Line(
+                            indices: [],
+                            width: 0,
+                            maxAscent: item.baseline,
+                            maxDescent: item.size.height - item.baseline
+                        )
+                    )
+                } else {
+                    flushCurrentLine()
+                }
+                continue
+            }
+
             let candidateWidth = currentIndices.isEmpty ? item.size.width : currentWidth + spacing + item.size.width
             if !currentIndices.isEmpty, candidateWidth > maxWidth {
                 flushCurrentLine()
@@ -731,8 +788,21 @@ struct FlowLayout: Layout {
         return lines
     }
 
+    private func measurementProposal(for subview: LayoutSubview, maxWidth: CGFloat) -> ProposedViewSize {
+        guard maxWidth.isFinite else {
+            return .unspecified
+        }
+
+        let unspecifiedSize = subview.sizeThatFits(.unspecified)
+        guard unspecifiedSize.width > maxWidth else {
+            return .unspecified
+        }
+
+        return ProposedViewSize(width: maxWidth, height: nil)
+    }
+
     private func resolvedBaseline(from dimensions: ViewDimensions, size: CGSize) -> CGFloat {
-        let first = dimensions[.lastTextBaseline]
+        let first = dimensions[.firstTextBaseline]
         if first.isFinite, first > 0, first <= size.height {
             return first
         }
@@ -745,4 +815,26 @@ struct FlowLayout: Layout {
         // For non-text views, use vertical center as a neutral fallback.
         return size.height / 2
     }
+}
+
+private struct InlineTextStyle: OptionSet {
+    let rawValue: Int
+
+    static let bold = InlineTextStyle(rawValue: 1 << 0)
+    static let italic = InlineTextStyle(rawValue: 1 << 1)
+    static let strikethrough = InlineTextStyle(rawValue: 1 << 2)
+    static let code = InlineTextStyle(rawValue: 1 << 3)
+}
+
+private enum InlineFlowElement {
+    case text(String, InlineTextStyle)
+    case link(Markdown.Link)
+    case codeReference(MCodeReference)
+    case image(Markdown.Image)
+    case latex(String, Bool)
+    case lineBreak
+}
+
+private struct FlowLineBreakLayoutValueKey: LayoutValueKey {
+    static let defaultValue = false
 }
