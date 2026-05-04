@@ -35,8 +35,8 @@ public struct MarkdownView: View, @MainActor Equatable {
 
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .fixedSize(horizontal: false, vertical: true)
+//            .frame(maxWidth: .infinity, alignment: .topLeading)
+//            .fixedSize(horizontal: false, vertical: true)
             .frame(height: snapshot.estimatedHeight, alignment: .top)
             .background(widthReader)
 #if os(macOS) || os(iOS)
