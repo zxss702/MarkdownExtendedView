@@ -5,18 +5,35 @@ struct MarkdownRenderSnapshot: Sendable {
     let blocks: [MarkdownBlockNode]
     let estimatedHeight: CGFloat?
 
+    static let empty = MarkdownRenderSnapshot(blocks: [], estimatedHeight: nil)
+
     static func parse(_ content: String) async -> Self {
-        await MainActor.run {
-            Self.parse(content)
+        let cacheKey = contentOnlyCacheKey(content)
+        if let cached = await MainActor.run(resultType: MarkdownRenderSnapshot?.self, body: {
+            MarkdownRenderSnapshotCache.shared.object(forKey: cacheKey as NSString)?.snapshot
+        }) {
+            return cached
         }
+
+        let snapshot = MarkdownRenderSnapshot(
+            blocks: await parsedBlocks(for: content),
+            estimatedHeight: nil
+        )
+
+        await MainActor.run {
+            MarkdownRenderSnapshotCache.shared.setObject(
+                MarkdownRenderSnapshotBox(snapshot: snapshot),
+                forKey: cacheKey as NSString
+            )
+        }
+
+        return snapshot
     }
 
     static func parse(_ content: String, width: CGFloat, theme: MarkdownTheme) async -> Self {
         let roundedWidth = roundedWidth(width)
         guard roundedWidth > 0 else {
-            return await MainActor.run {
-                Self.parse(content)
-            }
+            return await Self.parse(content)
         }
 
         let cacheKey = snapshotCacheKey(content: content, width: roundedWidth, theme: theme)

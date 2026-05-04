@@ -13,10 +13,12 @@ struct MCodeReferenceBlockView: View {
     let tapHandler: (@Sendable (MCodeReference) -> Void)?
 
     var body: some View {
+        let baseline = inlineBaseline
+
         Button(action: handleTap) {
             HStack(alignment: VerticalAlignment.lastTextBaseline, spacing: 6) {
                 fileIconView(fileURL: reference.url)
-                    .frame(width: 12, height: 12)
+                    .frame(width: iconSize, height: iconSize)
 
                 Text(titleText)
                     .lineLimit(1)
@@ -31,12 +33,14 @@ struct MCodeReferenceBlockView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, verticalPadding)
             .background(theme.codeBackgroundColor.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
+        .alignmentGuide(.firstTextBaseline) { _ in baseline }
+        .alignmentGuide(.lastTextBaseline) { _ in baseline }
     }
 
     private var titleText: String {
@@ -73,6 +77,18 @@ struct MCodeReferenceBlockView: View {
         )
     }
 
+    private var iconSize: CGFloat {
+        max(theme.codeFont.pointSize - 5, 9)
+    }
+
+    private var verticalPadding: CGFloat {
+        1
+    }
+
+    private var inlineBaseline: CGFloat {
+        max(theme.codeFont.ascender, 0) + verticalPadding
+    }
+
     private func handleTap() {
         tapHandler?(reference)
     }
@@ -96,9 +112,14 @@ struct fileIconView: View {
             // 再检查扩展名
             customIcon
                 .scaledToFit()
-        } else if let uttype = try? fileURL.resourceValues(forKeys: [.contentTypeKey]).contentType {
+        } else if let uttype = UTType(filenameExtension: ext) {
             iconForUTType(uttype)
                 .scaledToFit()
+        } else if fileURL.hasDirectoryPath {
+            Image(systemName: "folder")
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.blue)
         } else {
             Image(systemName: "doc")
                 .resizable()

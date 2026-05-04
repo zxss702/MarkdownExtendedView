@@ -11,6 +11,8 @@ import SwiftUI
 
 /// A SwiftUI view that renders Markdown content with LaTeX equation support.
 public struct MarkdownView: View, @MainActor Equatable {
+    private static let synchronousParseCharacterLimit = 4096
+
     public static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
         lhs.content == rhs.content && lhs.baseURL == rhs.baseURL
     }
@@ -26,7 +28,10 @@ public struct MarkdownView: View, @MainActor Equatable {
     public init(_ content: String, baseURL: URL? = nil) {
         self.content = content
         self.baseURL = baseURL
-        _snapshot = State(initialValue: MarkdownRenderSnapshot.parse(content))
+        let initialSnapshot = content.count > Self.synchronousParseCharacterLimit
+            ? MarkdownRenderSnapshot.empty
+            : MarkdownRenderSnapshot.parse(content)
+        _snapshot = State(initialValue: initialSnapshot)
     }
 
     public init(content: String, baseURL: URL? = nil) {
@@ -35,6 +40,7 @@ public struct MarkdownView: View, @MainActor Equatable {
 
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
+            .lineLimit(nil)
 //            .frame(maxWidth: .infinity, alignment: .topLeading)
 //            .fixedSize(horizontal: false, vertical: true)
             .frame(height: snapshot.estimatedHeight, alignment: .top)

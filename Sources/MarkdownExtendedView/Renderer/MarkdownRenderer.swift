@@ -697,17 +697,8 @@ struct FlowLayout: Layout {
         }
 
         let maxWidth = max(proposal.width ?? .infinity, 1)
-        let measured = subviews.map { subview -> MeasuredSubview in
-            let measurementProposal = measurementProposal(for: subview, maxWidth: maxWidth)
-            let size = subview.sizeThatFits(measurementProposal)
-            let dimensions = subview.dimensions(in: measurementProposal)
-            let baseline = resolvedBaseline(from: dimensions, size: size)
-            return MeasuredSubview(
-                size: size,
-                baseline: baseline,
-                proposal: measurementProposal,
-                isForcedBreak: subview[FlowLineBreakLayoutValueKey.self]
-            )
+        let measured = subviews.map {
+            measuredSubview(for: $0, maxWidth: maxWidth)
         }
 
         let lines = computeLines(measured: measured, maxWidth: maxWidth)
@@ -788,17 +779,27 @@ struct FlowLayout: Layout {
         return lines
     }
 
-    private func measurementProposal(for subview: LayoutSubview, maxWidth: CGFloat) -> ProposedViewSize {
-        guard maxWidth.isFinite else {
-            return .unspecified
+    private func measuredSubview(for subview: LayoutSubview, maxWidth: CGFloat) -> MeasuredSubview {
+        let unspecifiedProposal = ProposedViewSize.unspecified
+        let unspecifiedSize = subview.sizeThatFits(unspecifiedProposal)
+
+        let measurementProposal: ProposedViewSize
+        let size: CGSize
+        if maxWidth.isFinite, unspecifiedSize.width > maxWidth {
+            measurementProposal = ProposedViewSize(width: maxWidth, height: nil)
+            size = subview.sizeThatFits(measurementProposal)
+        } else {
+            measurementProposal = unspecifiedProposal
+            size = unspecifiedSize
         }
 
-        let unspecifiedSize = subview.sizeThatFits(.unspecified)
-        guard unspecifiedSize.width > maxWidth else {
-            return .unspecified
-        }
-
-        return ProposedViewSize(width: maxWidth, height: nil)
+        let dimensions = subview.dimensions(in: measurementProposal)
+        return MeasuredSubview(
+            size: size,
+            baseline: resolvedBaseline(from: dimensions, size: size),
+            proposal: measurementProposal,
+            isForcedBreak: subview[FlowLineBreakLayoutValueKey.self]
+        )
     }
 
     private func resolvedBaseline(from dimensions: ViewDimensions, size: CGSize) -> CGFloat {

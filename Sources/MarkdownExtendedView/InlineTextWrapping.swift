@@ -1,11 +1,14 @@
 import Foundation
 
 enum MarkdownInlineTextWrapping {
+    private static let maxCJKUnitLength = 8
+
     static func units(in text: String) -> [String] {
         guard !text.isEmpty else { return [] }
 
         var units: [String] = []
         var current = ""
+        var currentCJK = ""
 
         func flushCurrent() {
             guard !current.isEmpty else { return }
@@ -13,29 +16,42 @@ enum MarkdownInlineTextWrapping {
             current.removeAll(keepingCapacity: true)
         }
 
+        func flushCJK() {
+            guard !currentCJK.isEmpty else { return }
+            units.append(currentCJK)
+            currentCJK.removeAll(keepingCapacity: true)
+        }
+
         for character in text {
             if character.isNewline {
                 flushCurrent()
+                flushCJK()
                 units.append(String(character))
                 continue
             }
 
             if character.isWhitespace {
                 current.append(character)
+                flushCJK()
                 flushCurrent()
                 continue
             }
 
             if character.isCJKLineBreakUnit {
                 flushCurrent()
-                units.append(String(character))
+                currentCJK.append(character)
+                if currentCJK.count >= maxCJKUnitLength {
+                    flushCJK()
+                }
                 continue
             }
 
+            flushCJK()
             current.append(character)
         }
 
         flushCurrent()
+        flushCJK()
         return units
     }
 }

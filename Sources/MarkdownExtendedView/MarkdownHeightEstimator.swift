@@ -273,7 +273,12 @@ enum MarkdownHeightEstimator {
 
         case let code as InlineCode:
             if let references = parseMCodeReferences(from: code.code), references.count == 1 {
-                return [.box(size: mCodeReferenceInlineSize(theme: theme))]
+                return [
+                    .box(
+                        size: mCodeReferenceInlineSize(theme: theme),
+                        baseline: mCodeReferenceInlineBaseline(theme: theme)
+                    )
+                ]
             }
             return textFlowItems(code.code, font: theme.codeFont)
 
@@ -454,7 +459,11 @@ enum MarkdownHeightEstimator {
         let titleHeight = theme.codeFont.markdownLineHeight
         let lineNumberHeight = max(theme.codeFont.pointSize - 4, 8)
         let contentHeight = max(titleHeight, lineNumberHeight, 12)
-        return CGSize(width: 160, height: ceil(contentHeight + 8))
+        return CGSize(width: 160, height: ceil(contentHeight + 2))
+    }
+
+    private static func mCodeReferenceInlineBaseline(theme: MarkdownTheme) -> CGFloat {
+        max(theme.codeFont.ascender, 0) + 1
     }
 }
 
@@ -469,8 +478,8 @@ private struct FlowItem {
         return FlowItem(size: size, baseline: max(font.ascender, 0), isForcedBreak: false)
     }
 
-    static func box(size: CGSize) -> FlowItem {
-        FlowItem(size: size, baseline: size.height / 2, isForcedBreak: false)
+    static func box(size: CGSize, baseline: CGFloat? = nil) -> FlowItem {
+        FlowItem(size: size, baseline: baseline ?? size.height / 2, isForcedBreak: false)
     }
 
     static func forcedBreak(lineHeight: CGFloat) -> FlowItem {
