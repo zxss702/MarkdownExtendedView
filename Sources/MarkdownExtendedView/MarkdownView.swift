@@ -88,6 +88,7 @@ public struct MarkdownView: View, @MainActor Equatable {
         let width = measuredWidth
         let theme = theme
         let animate = hasAppeared
+        let previousBlocks = snapshot.blocks
 
         updateTask = Task.detached(priority: .utility) { [content] in
             if debounce {
@@ -101,9 +102,9 @@ public struct MarkdownView: View, @MainActor Equatable {
             guard !Task.isCancelled else { return }
             let nextSnapshot: MarkdownRenderSnapshot
             if width > 0 {
-                nextSnapshot = await MarkdownRenderSnapshot.parse(content, width: width, theme: theme)
+                nextSnapshot = await MarkdownRenderSnapshot.parse(content, width: width, theme: theme, previousBlocks: previousBlocks)
             } else {
-                nextSnapshot = await MarkdownRenderSnapshot.parse(content)
+                nextSnapshot = await MarkdownRenderSnapshot.parse(content, previousBlocks: previousBlocks)
             }
 
             await MainActor.run {

@@ -1,5 +1,5 @@
 import Foundation
-import Markdown
+@preconcurrency import Markdown
 
 struct MarkdownRenderSnapshot: Sendable {
     let blocks: [MarkdownBlockNode]
@@ -7,192 +7,159 @@ struct MarkdownRenderSnapshot: Sendable {
 
     static let empty = MarkdownRenderSnapshot(blocks: [], estimatedHeight: nil)
 
-    static func parse(_ content: String) async -> Self {
-        let cacheKey = contentOnlyCacheKey(content)
-        if let cached = await MainActor.run(resultType: MarkdownRenderSnapshot?.self, body: {
-            MarkdownRenderSnapshotCache.shared.object(forKey: cacheKey as NSString)?.snapshot
-        }) {
-            return cached
-        }
+    // MARK: - Async parse (no layout)
 
-        let snapshot = MarkdownRenderSnapshot(
-            blocks: await parsedBlocks(for: content),
-            estimatedHeight: nil
-        )
-
-        await MainActor.run {
-            MarkdownRenderSnapshotCache.shared.setObject(
-                MarkdownRenderSnapshotBox(snapshot: snapshot),
-                forKey: cacheKey as NSString
-            )
-        }
-
-        return snapshot
+    static func parse(_ content: String, previousBlocks: [MarkdownBlockNode] = []) async -> Self {
+        let children = await parsedChildren(for: content)
+        let blocks = assignBlockIDs(children: children, reusingFrom: previousBlocks)
+        return MarkdownRenderSnapshot(blocks: blocks, estimatedHeight: nil)
     }
 
-    static func parse(_ content: String, width: CGFloat, theme: MarkdownTheme) async -> Self {
+    // MARK: - Async parse (with layout)
+
+    static func parse(
+        _ content: String,
+        width: CGFloat,
+        theme: MarkdownTheme,
+        previousBlocks: [MarkdownBlockNode] = []
+    ) async -> Self {
         let roundedWidth = roundedWidth(width)
         guard roundedWidth > 0 else {
-            return await Self.parse(content)
+            return await Self.parse(content, previousBlocks: previousBlocks)
         }
 
-        let cacheKey = snapshotCacheKey(content: content, width: roundedWidth, theme: theme)
-        if let cached = await MainActor.run(resultType: MarkdownRenderSnapshot?.self, body: {
-            MarkdownRenderSnapshotCache.shared.object(forKey: cacheKey as NSString)?.snapshot
-        }) {
-            return cached
+        let children = await parsedChildren(for: content)
+        let blocks = assignBlockIDs(children: children, reusingFrom: previousBlocks)
+
+        let heightKey = heightCacheKey(content: content, width: roundedWidth, theme: theme)
+        let estimatedHeight: CGFloat = await MainActor.run {
+            if let cached = MarkdownHeightCache.shared.object(forKey: heightKey as NSString) {
+                return CGFloat(cached.floatValue)
+            }
+            let h = MarkdownHeightEstimator.estimate(blocks: blocks, width: roundedWidth, theme: theme)
+            MarkdownHeightCache.shared.setObject(NSNumber(value: Double(h)), forKey: heightKey as NSString)
+            return h
         }
 
-        let blocks = await parsedBlocks(for: content)
-        let estimatedHeight = await MainActor.run {
-            MarkdownHeightEstimator.estimate(blocks: blocks, width: roundedWidth, theme: theme)
-        }
-        let snapshot = MarkdownRenderSnapshot(
-            blocks: blocks,
-            estimatedHeight: estimatedHeight
-        )
-
-        await MainActor.run {
-            MarkdownRenderSnapshotCache.shared.setObject(
-                MarkdownRenderSnapshotBox(snapshot: snapshot),
-                forKey: cacheKey as NSString
-            )
-        }
-
-        return snapshot
+        return MarkdownRenderSnapshot(blocks: blocks, estimatedHeight: estimatedHeight)
     }
 
+    // MARK: - Sync parse (initial render, main actor)
+
     @MainActor
-    static func parse(_ content: String) -> Self {
-        let cacheKey = contentOnlyCacheKey(content)
-        if let cached = MarkdownRenderSnapshotCache.shared.object(forKey: cacheKey as NSString)?.snapshot {
-            return cached
-        }
-
-        let snapshot = MarkdownRenderSnapshot(
-            blocks: parsedBlocksSync(for: content),
-            estimatedHeight: nil
-        )
-
-        MarkdownRenderSnapshotCache.shared.setObject(
-            MarkdownRenderSnapshotBox(snapshot: snapshot),
-            forKey: cacheKey as NSString
-        )
-
-        return snapshot
+    static func parse(_ content: String, previousBlocks: [MarkdownBlockNode] = []) -> Self {
+        let children = parsedChildrenSync(for: content)
+        let blocks = assignBlockIDs(children: children, reusingFrom: previousBlocks)
+        return MarkdownRenderSnapshot(blocks: blocks, estimatedHeight: nil)
     }
 
     static func roundedWidth(_ width: CGFloat) -> CGFloat {
         max((width * 2).rounded(.toNearestOrEven) / 2, 0)
     }
 
-    private static func parsedBlocks(for content: String) async -> [MarkdownBlockNode] {
-        if let cached = await MainActor.run(resultType: [MarkdownBlockNode]?.self, body: {
-            MarkdownParsedBlocksCache.shared.object(forKey: content as NSString)?.blocks
+    // MARK: - ID assignment with reuse
+
+    private static func assignBlockIDs(
+        children: [any Markup],
+        reusingFrom previous: [MarkdownBlockNode]
+    ) -> [MarkdownBlockNode] {
+        children.enumerated().map { index, child in
+            let kind = String(describing: type(of: child))
+            // Reuse UUID if previous block at same index has same kind
+            let id: UUID
+            if index < previous.count, previous[index].kind == kind {
+                id = previous[index].id
+            } else {
+                id = UUID()
+            }
+            return MarkdownBlockNode(id: id, kind: kind, markup: child)
+        }
+    }
+
+    // MARK: - Parsed children cache (content → [any Markup])
+
+    private static func parsedChildren(for content: String) async -> [any Markup] {
+        if let cached = await MainActor.run(resultType: [any Markup]?.self, body: {
+            MarkdownParsedChildrenCache.shared.object(forKey: content as NSString)?.children
         }) {
             return cached
         }
 
-        let blocks = makeBlocks(from: preprocessedChildren(for: content))
+        nonisolated(unsafe) let children = preprocessedChildren(for: content)
 
         await MainActor.run {
-            MarkdownParsedBlocksCache.shared.setObject(
-                MarkdownParsedBlocksBox(blocks: blocks),
+            MarkdownParsedChildrenCache.shared.setObject(
+                MarkdownParsedChildrenBox(children: children),
                 forKey: content as NSString
             )
         }
 
-        return blocks
+        return children
     }
 
     @MainActor
-    private static func parsedBlocksSync(for content: String) -> [MarkdownBlockNode] {
-        if let cached = MarkdownParsedBlocksCache.shared.object(forKey: content as NSString)?.blocks {
+    private static func parsedChildrenSync(for content: String) -> [any Markup] {
+        if let cached = MarkdownParsedChildrenCache.shared.object(forKey: content as NSString)?.children {
             return cached
         }
 
-        let blocks = makeBlocks(from: preprocessedChildren(for: content))
+        let children = preprocessedChildren(for: content)
 
-        MarkdownParsedBlocksCache.shared.setObject(
-            MarkdownParsedBlocksBox(blocks: blocks),
+        MarkdownParsedChildrenCache.shared.setObject(
+            MarkdownParsedChildrenBox(children: children),
             forKey: content as NSString
         )
 
-        return blocks
+        return children
     }
 
-    private static func makeBlocks(from children: [any Markup]) -> [MarkdownBlockNode] {
-        var kindCounts: [String: Int] = [:]
-        return children.map { child in
-            let kind = String(describing: type(of: child))
-            let occurrence = kindCounts[kind, default: 0]
-            kindCounts[kind] = occurrence + 1
-            return MarkdownBlockNode(
-                id: .init(kind: kind, occurrence: occurrence),
-                markup: child
-            )
-        }
+    // MARK: - Cache keys
+
+    private static func heightCacheKey(content: String, width: CGFloat, theme: MarkdownTheme) -> String {
+        "height|\(width)|\(theme.layoutSignature)|\(content)"
     }
 
-    private static func contentOnlyCacheKey(_ content: String) -> String {
-        "content|\(content)"
-    }
-
-    private static func snapshotCacheKey(content: String, width: CGFloat, theme: MarkdownTheme) -> String {
-        "layout|\(width)|\(theme.layoutSignature)|\(content)"
-    }
+    // MARK: - Preprocessing
 
     private static func preprocessedChildren(for content: String) -> [any Markup] {
-        var processedContent = content
-        let footnoteResult = FootnotePreprocessor().process(processedContent)
-        processedContent = footnoteResult.processedMarkdown
-        processedContent = LaTeXPreprocessor.process(processedContent)
-
+        let processedContent = LaTeXPreprocessor.process(content)
         let document = Document(parsing: processedContent)
         return Array(document.children)
     }
 }
 
+// MARK: - Block Node
+
 struct MarkdownBlockNode: Identifiable, @unchecked Sendable {
-    let id: MarkdownBlockIdentity
+    let id: UUID
+    let kind: String
     let markup: any Markup
 }
 
-struct MarkdownBlockIdentity: Hashable, Sendable {
-    let kind: String
-    let occurrence: Int
-}
+// MARK: - Caches
 
 @MainActor
-private final class MarkdownParsedBlocksCache {
-    static let shared: NSCache<NSString, MarkdownParsedBlocksBox> = {
-        let cache = NSCache<NSString, MarkdownParsedBlocksBox>()
+private final class MarkdownParsedChildrenCache {
+    static let shared: NSCache<NSString, MarkdownParsedChildrenBox> = {
+        let cache = NSCache<NSString, MarkdownParsedChildrenBox>()
         cache.countLimit = 128
         return cache
     }()
 }
 
 @MainActor
-private final class MarkdownRenderSnapshotCache {
-    static let shared: NSCache<NSString, MarkdownRenderSnapshotBox> = {
-        let cache = NSCache<NSString, MarkdownRenderSnapshotBox>()
-        cache.countLimit = 128
+private final class MarkdownHeightCache {
+    static let shared: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 256
         return cache
     }()
 }
 
-private final class MarkdownParsedBlocksBox: NSObject {
-    let blocks: [MarkdownBlockNode]
+private final class MarkdownParsedChildrenBox: NSObject, @unchecked Sendable {
+    let children: [any Markup]
 
-    init(blocks: [MarkdownBlockNode]) {
-        self.blocks = blocks
-    }
-}
-
-private final class MarkdownRenderSnapshotBox: NSObject {
-    let snapshot: MarkdownRenderSnapshot
-
-    init(snapshot: MarkdownRenderSnapshot) {
-        self.snapshot = snapshot
+    init(children: [any Markup]) {
+        self.children = children
     }
 }
