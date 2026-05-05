@@ -18,7 +18,7 @@ struct MarkdownRenderer: View {
     @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+        VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
             ForEach(snapshot.blocks) { block in
                 renderBlock(block.markup)
             }
@@ -141,7 +141,7 @@ struct MarkdownRenderer: View {
                 .fill(theme.blockQuoteBorderColor)
                 .frame(width: 4)
 
-            LazyVStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
+            VStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
                 ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
                     renderBlock(child)
                 }
@@ -163,7 +163,7 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderOrderedList(_ list: OrderedList, depth: Int = 0) -> some View {
-        LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
+        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.listItems.enumerated()), id: \.offset) { index, item in
                 renderListItem(item, bullet: "\(index + Int(list.startIndex)).", depth: depth)
             }
@@ -173,7 +173,7 @@ struct MarkdownRenderer: View {
 
     @ViewBuilder
     private func renderUnorderedList(_ list: UnorderedList, depth: Int = 0) -> some View {
-        LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
+        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.listItems.enumerated()), id: \.offset) { _, item in
                 if item.checkbox != nil {
                     renderTaskListItem(item, depth: depth)
@@ -193,7 +193,7 @@ struct MarkdownRenderer: View {
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
-            LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
+            VStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
                     renderListChildBlock(child, depth: depth)
                 }
@@ -209,7 +209,7 @@ struct MarkdownRenderer: View {
                 .foregroundColor(item.checkbox?.isChecked == true ? theme.linkColor : theme.secondaryTextColor)
                 .frame(width: 20, alignment: .trailing)
 
-            LazyVStack(alignment: .leading, spacing: theme.listItemSpacing) {
+            VStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
                     renderListChildBlock(child, depth: depth)
                 }
@@ -233,7 +233,7 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderTable(_ table: Markdown.Table) -> some View {
         let cellArrays = extractTableCells(from: table)
-        LazyVStack(spacing: 0) {
+        VStack(spacing: 0) {
             // Header row
             if !cellArrays.header.isEmpty {
                 renderTableCellRow(cells: cellArrays.header, isHeader: true)

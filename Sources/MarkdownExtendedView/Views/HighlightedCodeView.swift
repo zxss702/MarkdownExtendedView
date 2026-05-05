@@ -37,7 +37,7 @@ public struct HighlightedCodeView: View {
     }
     
     public var body: some View {
-        LazyVStack(alignment: .leading, spacing: theme.codeLineSpacing) {
+        VStack(alignment: .leading, spacing: theme.codeLineSpacing) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, lineTokens in
                 lineView(for: lineTokens)
             }
