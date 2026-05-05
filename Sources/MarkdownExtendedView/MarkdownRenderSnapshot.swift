@@ -32,13 +32,18 @@ struct MarkdownRenderSnapshot: Sendable {
         let blocks = assignBlockIDs(children: children, reusingFrom: previousBlocks)
 
         let heightKey = heightCacheKey(content: content, width: roundedWidth, theme: theme)
-        let estimatedHeight: CGFloat = await MainActor.run {
-            if let cached = MarkdownHeightCache.shared.object(forKey: heightKey as NSString) {
-                return CGFloat(cached.floatValue)
-            }
-            let h = MarkdownHeightEstimator.estimate(blocks: blocks, width: roundedWidth, theme: theme)
-            MarkdownHeightCache.shared.setObject(NSNumber(value: Double(h)), forKey: heightKey as NSString)
-            return h
+        let cachedHeight = await MainActor.run {
+            MarkdownHeightCache.shared.object(forKey: heightKey as NSString)?.floatValue
+        }
+        
+        if let cached = cachedHeight {
+            return MarkdownRenderSnapshot(blocks: blocks, estimatedHeight: CGFloat(cached))
+        }
+
+        let estimatedHeight = await MarkdownHeightEstimator.estimate(blocks: blocks, width: roundedWidth, theme: theme)
+
+        await MainActor.run {
+            MarkdownHeightCache.shared.setObject(NSNumber(value: Double(estimatedHeight)), forKey: heightKey as NSString)
         }
 
         return MarkdownRenderSnapshot(blocks: blocks, estimatedHeight: estimatedHeight)

@@ -667,7 +667,18 @@ struct FlowLayout: Layout {
     var lineSpacing: CGFloat = 0
     var minimumLineHeight: CGFloat = 0
 
-    private struct MeasuredSubview {
+    struct CacheData {
+        var size: CGSize
+        var positions: [CGPoint]
+        var measured: [MeasuredSubview]
+        var proposal: ProposedViewSize?
+    }
+
+    func makeCache(subviews: Subviews) -> CacheData? {
+        return nil
+    }
+
+    struct MeasuredSubview {
         let size: CGSize
         let baseline: CGFloat
         let proposal: ProposedViewSize
@@ -693,13 +704,23 @@ struct FlowLayout: Layout {
         }
     }
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout CacheData?) -> CGSize {
+        if let cached = cache, cached.proposal == proposal {
+            return cached.size
+        }
         let result = computeLayout(proposal: proposal, subviews: subviews)
+        cache = CacheData(size: result.size, positions: result.positions, measured: result.measured, proposal: proposal)
         return result.size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = computeLayout(proposal: proposal, subviews: subviews)
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout CacheData?) {
+        let result: (size: CGSize, positions: [CGPoint], measured: [MeasuredSubview])
+        if let cached = cache, cached.proposal == proposal {
+            result = (cached.size, cached.positions, cached.measured)
+        } else {
+            result = computeLayout(proposal: proposal, subviews: subviews)
+            cache = CacheData(size: result.size, positions: result.positions, measured: result.measured, proposal: proposal)
+        }
 
         for (index, subview) in subviews.enumerated() {
             if index < result.positions.count {

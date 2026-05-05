@@ -8,19 +8,29 @@ import AppKit
 import UIKit
 #endif
 
-@MainActor
 enum MarkdownHeightEstimator {
     private static let bulletStyles = ["•", "◦", "▪", "▸"]
 
-    static func estimate(blocks: [MarkdownBlockNode], width: CGFloat, theme: MarkdownTheme) -> CGFloat {
+    static func estimate(blocks: [MarkdownBlockNode], width: CGFloat, theme: MarkdownTheme) async -> CGFloat {
         guard width > 0 else { return 0 }
 
-        let blockHeights = blocks.map { estimateBlock($0.markup, width: width, theme: theme) }
-        let totalSpacing = theme.paragraphSpacing * CGFloat(max(0, blocks.count - 1))
-        return ceil(blockHeights.reduce(0, +) + totalSpacing)
+        return await withTaskGroup(of: CGFloat.self) { group in
+            for block in blocks {
+                group.addTask {
+                    if Task.isCancelled { return 0 }
+                    return await estimateBlock(block.markup, width: width, theme: theme)
+                }
+            }
+            var totalHeight: CGFloat = 0
+            for await height in group {
+                totalHeight += height
+            }
+            let totalSpacing = theme.paragraphSpacing * CGFloat(max(0, blocks.count - 1))
+            return ceil(totalHeight + totalSpacing)
+        }
     }
 
-    private static func estimateBlock(_ markup: any Markup, width: CGFloat, theme: MarkdownTheme) -> CGFloat {
+    private static func estimateBlock(_ markup: any Markup, width: CGFloat, theme: MarkdownTheme) async -> CGFloat {
         let availableWidth = max(width, 1)
 
         switch markup {
@@ -34,7 +44,7 @@ enum MarkdownHeightEstimator {
             return ceil(contentHeight + (heading.level == 1 ? 16 : 8) + 4)
 
         case let paragraph as Paragraph:
-            return estimateParagraph(paragraph, width: availableWidth, theme: theme)
+            return await estimateParagraph(paragraph, width: availableWidth, theme: theme)
 
         case let codeBlock as CodeBlock:
             if codeBlock.language == "mermaid" {
@@ -44,17 +54,19 @@ enum MarkdownHeightEstimator {
 
         case let blockQuote as BlockQuote:
             let innerWidth = max(availableWidth - 16, 1)
-            let childHeights = blockQuote.children.map {
-                estimateBlock($0, width: innerWidth, theme: theme)
+            var totalChildHeight: CGFloat = 0
+            for child in blockQuote.children {
+                if Task.isCancelled { return 0 }
+                totalChildHeight += await estimateBlock(child, width: innerWidth, theme: theme)
             }
-            let spacing = (theme.paragraphSpacing / 2) * CGFloat(max(0, childHeights.count - 1))
-            return ceil(childHeights.reduce(0, +) + spacing + 8)
+            let spacing = (theme.paragraphSpacing / 2) * CGFloat(max(0, blockQuote.childCount - 1))
+            return ceil(totalChildHeight + spacing + 8)
 
         case let orderedList as OrderedList:
-            return estimateOrderedList(orderedList, width: availableWidth, theme: theme, depth: 0)
+            return await estimateOrderedList(orderedList, width: availableWidth, theme: theme, depth: 0)
 
         case let unorderedList as UnorderedList:
-            return estimateUnorderedList(unorderedList, width: availableWidth, theme: theme, depth: 0)
+            return await estimateUnorderedList(unorderedList, width: availableWidth, theme: theme, depth: 0)
 
         case let table as Markdown.Table:
             return estimateTable(table, width: availableWidth, theme: theme)
@@ -75,13 +87,13 @@ enum MarkdownHeightEstimator {
         }
     }
 
-    private static func estimateParagraph(_ paragraph: Paragraph, width: CGFloat, theme: MarkdownTheme) -> CGFloat {
+    private static func estimateParagraph(_ paragraph: Paragraph, width: CGFloat, theme: MarkdownTheme) async -> CGFloat {
         let plainText = paragraph.plainText
 
         if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") {
             let latex = String(plainText.dropFirst(2).dropLast(2))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let formulaSize = measureFormula(
+            let formulaSize = await measureFormula(
                 latex,
                 fontSize: theme.latexBlockFontSize,
                 mode: .display,
@@ -91,8 +103,9 @@ enum MarkdownHeightEstimator {
         }
 
         if LaTeXPreprocessor.containsLaTeX(plainText) {
-            let items = LaTeXPreprocessor.extractSegments(from: plainText).flatMap {
-                flowItems(for: $0, theme: theme, maxWidth: width)
+            var items: [FlowItem] = []
+            for segment in LaTeXPreprocessor.extractSegments(from: plainText) {
+                items.append(contentsOf: await flowItems(for: segment, theme: theme, maxWidth: width))
             }
             return estimateFlowHeight(
                 items: items,
@@ -103,7 +116,10 @@ enum MarkdownHeightEstimator {
         }
 
         if containsLinks(paragraph) || containsImages(paragraph) || containsInlineMCodeReferences(paragraph) {
-            let items = paragraph.children.flatMap { flowItems(for: $0, theme: theme, maxWidth: width) }
+            var items: [FlowItem] = []
+            for child in paragraph.children {
+                items.append(contentsOf: flowItems(for: child, theme: theme, maxWidth: width))
+            }
             return estimateFlowHeight(
                 items: items,
                 maxWidth: width,
@@ -136,10 +152,11 @@ enum MarkdownHeightEstimator {
         return ceil(heights.reduce(0, +) + lineSpacing + (theme.codeBlockPadding * 2))
     }
 
-    private static func estimateOrderedList(_ list: OrderedList, width: CGFloat, theme: MarkdownTheme, depth: Int) -> CGFloat {
+    private static func estimateOrderedList(_ list: OrderedList, width: CGFloat, theme: MarkdownTheme, depth: Int) async -> CGFloat {
         let listWidth = max(width - (depth > 0 ? theme.indentation : 0), 1)
-        let itemHeights = Array(list.listItems.enumerated()).map { index, item in
-            estimateListItem(
+        var totalHeight: CGFloat = 0
+        for (index, item) in list.listItems.enumerated() {
+            let itemH = await estimateListItem(
                 item,
                 width: listWidth,
                 bulletWidth: measureSingleLine(
@@ -150,31 +167,36 @@ enum MarkdownHeightEstimator {
                 theme: theme,
                 depth: depth
             )
+            totalHeight += itemH
         }
-        let spacing = theme.listItemSpacing * CGFloat(max(0, itemHeights.count - 1))
-        return ceil(itemHeights.reduce(0, +) + spacing)
+        let spacing = theme.listItemSpacing * CGFloat(max(0, list.childCount - 1))
+        return ceil(totalHeight + spacing)
     }
 
-    private static func estimateUnorderedList(_ list: UnorderedList, width: CGFloat, theme: MarkdownTheme, depth: Int) -> CGFloat {
+    private static func estimateUnorderedList(_ list: UnorderedList, width: CGFloat, theme: MarkdownTheme, depth: Int) async -> CGFloat {
         let listWidth = max(width - (depth > 0 ? theme.indentation : 0), 1)
-        let itemHeights = Array(list.listItems).map { item in
+        var totalHeight: CGFloat = 0
+        for item in list.listItems {
+            let itemH: CGFloat
             if item.checkbox != nil {
-                return estimateTaskListItem(item, width: listWidth, theme: theme, depth: depth)
+                itemH = await estimateTaskListItem(item, width: listWidth, theme: theme, depth: depth)
+            } else {
+                itemH = await estimateListItem(
+                    item,
+                    width: listWidth,
+                    bulletWidth: measureSingleLine(
+                        bulletStyles[depth % bulletStyles.count],
+                        font: theme.bodyFont
+                    ).width,
+                    bulletSpacing: 4,
+                    theme: theme,
+                    depth: depth
+                )
             }
-            return estimateListItem(
-                item,
-                width: listWidth,
-                bulletWidth: measureSingleLine(
-                    bulletStyles[depth % bulletStyles.count],
-                    font: theme.bodyFont
-                ).width,
-                bulletSpacing: 4,
-                theme: theme,
-                depth: depth
-            )
+            totalHeight += itemH
         }
-        let spacing = theme.listItemSpacing * CGFloat(max(0, itemHeights.count - 1))
-        return ceil(itemHeights.reduce(0, +) + spacing)
+        let spacing = theme.listItemSpacing * CGFloat(max(0, list.childCount - 1))
+        return ceil(totalHeight + spacing)
     }
 
     private static func estimateListItem(
@@ -184,9 +206,9 @@ enum MarkdownHeightEstimator {
         bulletSpacing: CGFloat,
         theme: MarkdownTheme,
         depth: Int
-    ) -> CGFloat {
+    ) async -> CGFloat {
         let contentWidth = max(width - bulletWidth - bulletSpacing, 1)
-        let contentHeight = estimateListItemChildren(Array(item.children), width: contentWidth, theme: theme, depth: depth)
+        let contentHeight = await estimateListItemChildren(Array(item.children), width: contentWidth, theme: theme, depth: depth)
         return ceil(max(theme.bodyFont.markdownLineHeight, contentHeight))
     }
 
@@ -195,9 +217,9 @@ enum MarkdownHeightEstimator {
         width: CGFloat,
         theme: MarkdownTheme,
         depth: Int
-    ) -> CGFloat {
+    ) async -> CGFloat {
         let contentWidth = max(width - 20 - 8, 1)
-        let contentHeight = estimateListItemChildren(Array(item.children), width: contentWidth, theme: theme, depth: depth)
+        let contentHeight = await estimateListItemChildren(Array(item.children), width: contentWidth, theme: theme, depth: depth)
         return ceil(max(theme.bodyFont.markdownLineHeight, contentHeight))
     }
 
@@ -206,18 +228,19 @@ enum MarkdownHeightEstimator {
         width: CGFloat,
         theme: MarkdownTheme,
         depth: Int
-    ) -> CGFloat {
-        let heights = children.map { child -> CGFloat in
+    ) async -> CGFloat {
+        var totalHeight: CGFloat = 0
+        for child in children {
             if let nestedOrdered = child as? OrderedList {
-                return estimateOrderedList(nestedOrdered, width: width, theme: theme, depth: depth + 1)
+                totalHeight += await estimateOrderedList(nestedOrdered, width: width, theme: theme, depth: depth + 1)
+            } else if let nestedUnordered = child as? UnorderedList {
+                totalHeight += await estimateUnorderedList(nestedUnordered, width: width, theme: theme, depth: depth + 1)
+            } else {
+                totalHeight += await estimateBlock(child, width: width, theme: theme)
             }
-            if let nestedUnordered = child as? UnorderedList {
-                return estimateUnorderedList(nestedUnordered, width: width, theme: theme, depth: depth + 1)
-            }
-            return estimateBlock(child, width: width, theme: theme)
         }
-        let spacing = theme.listItemSpacing * CGFloat(max(0, heights.count - 1))
-        return ceil(heights.reduce(0, +) + spacing)
+        let spacing = theme.listItemSpacing * CGFloat(max(0, children.count - 1))
+        return ceil(totalHeight + spacing)
     }
 
     private static func estimateTable(_ table: Markdown.Table, width: CGFloat, theme: MarkdownTheme) -> CGFloat {
@@ -313,12 +336,12 @@ enum MarkdownHeightEstimator {
         for segment: LaTeXPreprocessor.Segment,
         theme: MarkdownTheme,
         maxWidth: CGFloat
-    ) -> [FlowItem] {
+    ) async -> [FlowItem] {
         switch segment {
         case .text(let text):
             return textFlowItems(text, font: theme.bodyFont)
         case .latex(let latex, _):
-            let size = measureFormula(
+            let size = await measureFormula(
                 latex,
                 fontSize: theme.latexInlineFontSize,
                 mode: .text,
@@ -386,13 +409,20 @@ enum MarkdownHeightEstimator {
         return ceil(max(totalHeight, fallbackLineHeight))
     }
 
+@MainActor
+private final class MTMathUILabelCache {
+    static let shared = MTMathUILabel()
+}
+
+extension MarkdownHeightEstimator {
+    @MainActor
     private static func measureFormula(
         _ latex: String,
         fontSize: CGFloat,
         mode: MTMathUILabelMode,
         maxWidth: CGFloat
     ) -> CGSize {
-        let label = MTMathUILabel()
+        let label = MTMathUILabelCache.shared
         label.latex = latex
         label.fontSize = fontSize
         label.labelMode = mode
@@ -486,7 +516,6 @@ enum MarkdownHeightEstimator {
     }
 }
 
-@MainActor
 private struct FlowItem {
     let size: CGSize
     let baseline: CGFloat

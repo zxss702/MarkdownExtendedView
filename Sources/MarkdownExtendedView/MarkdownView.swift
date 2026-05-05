@@ -23,8 +23,7 @@ public struct MarkdownView: View, @MainActor Equatable {
     @Environment(\.markdownTheme) private var theme
     @State private var snapshot: MarkdownRenderSnapshot
     @State private var measuredWidth: CGFloat = 0
-    @State private var updateTask: Task<Void, Never>? = nil
-    @State private var hasAppeared = false
+    @State private var helper = ViewHelper()
 
     public init(_ content: String, baseURL: URL? = nil) {
         self.content = content
@@ -50,7 +49,6 @@ public struct MarkdownView: View, @MainActor Equatable {
             .selectable()
 #endif
             .onPreferenceChange(MarkdownViewWidthPreferenceKey.self, perform: updateMeasuredWidth(_:))
-            .onAppear(perform: refreshLayoutSnapshot)
             .onChange(of: content) { _, newValue in
                 scheduleSnapshotUpdate(for: newValue, debounce: true)
             }
@@ -58,8 +56,8 @@ public struct MarkdownView: View, @MainActor Equatable {
                 refreshLayoutSnapshot()
             }
             .onDisappear {
-                updateTask?.cancel()
-                updateTask = nil
+                helper.updateTask?.cancel()
+                helper.updateTask = nil
             }
     }
 
@@ -84,16 +82,20 @@ public struct MarkdownView: View, @MainActor Equatable {
     }
 
     private func scheduleSnapshotUpdate(for content: String, debounce: Bool) {
-        updateTask?.cancel()
+        let now = Date()
+        let timeSinceLastUpdate = now.timeIntervalSince(helper.lastUpdateTime)
+        let delay: TimeInterval = debounce ? max(0, 0.1 - timeSinceLastUpdate) : 0
+
+        helper.updateTask?.cancel()
         let width = measuredWidth
         let theme = theme
-        let animate = hasAppeared
+        let animate = helper.hasAppeared
         let previousBlocks = snapshot.blocks
 
-        updateTask = Task.detached(priority: .utility) { [content] in
-            if debounce {
+        helper.updateTask = Task.detached(priority: .userInitiated) { [content] in
+            if delay > 0 {
                 do {
-                    try await Task.sleep(for: .milliseconds(100))
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 } catch {
                     return
                 }
@@ -109,15 +111,16 @@ public struct MarkdownView: View, @MainActor Equatable {
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }
+                helper.lastUpdateTime = Date()
                 if animate {
                     withAnimation(.snappy) {
                         snapshot = nextSnapshot
                     }
                 } else {
                     snapshot = nextSnapshot
-                    hasAppeared = true
+                    helper.hasAppeared = true
                 }
-                updateTask = nil
+                helper.updateTask = nil
             }
         }
     }
@@ -135,5 +138,16 @@ private struct MarkdownViewWidthPreferenceKey: PreferenceKey {
 public extension View {
     func markdownTheme(_ theme: MarkdownTheme) -> some View {
         environment(\.markdownTheme, theme)
+    }
+}
+
+// MARK: - View Helper
+
+extension MarkdownView {
+    @Observable
+    final class ViewHelper {
+        @ObservationIgnored var updateTask: Task<Void, Never>? = nil
+        @ObservationIgnored var hasAppeared = false
+        @ObservationIgnored var lastUpdateTime: Date = .distantPast
     }
 }
