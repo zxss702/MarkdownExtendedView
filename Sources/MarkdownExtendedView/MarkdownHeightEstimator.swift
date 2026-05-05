@@ -409,12 +409,11 @@ enum MarkdownHeightEstimator {
         return ceil(max(totalHeight, fallbackLineHeight))
     }
 
-@MainActor
-private final class MTMathUILabelCache {
-    static let shared = MTMathUILabel()
-}
+    @MainActor
+    private final class MTMathUILabelCache {
+        static let shared = MTMathUILabel()
+    }
 
-extension MarkdownHeightEstimator {
     @MainActor
     private static func measureFormula(
         _ latex: String,
