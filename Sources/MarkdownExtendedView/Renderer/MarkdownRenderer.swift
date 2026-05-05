@@ -113,6 +113,7 @@ struct MarkdownRenderer: View {
             } else {
                 Text(codeBlock.code.trimmingCharacters(in: .newlines))
                     .font(theme.codeBlockSwiftUIFont)
+                    .contentTransition(.numericText(countsDown: true))
                     .foregroundColor(theme.textColor)
             }
         }
@@ -190,6 +191,7 @@ struct MarkdownRenderer: View {
         HStack(alignment: .top, spacing: 4) {
             Text(bullet)
                 .font(theme.bodySwiftUIFont)
+                .contentTransition(.numericText(countsDown: true))
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
@@ -636,6 +638,7 @@ extension View {
     func selectionTextPassThrough() -> some View {
 #if os(macOS)
         self
+            .contentTransition(.numericText(countsDown: true))
             .allowsHitTesting(false)
             .pointerStyle(.horizontalText)
 #else
@@ -647,6 +650,7 @@ extension View {
     func buttonLink() -> some View {
 #if os(macOS)
         self
+            .contentTransition(.numericText(countsDown: true))
             .buttonStyle(.borderless)
             .contentShape(Rectangle())
             .pointerStyle(.link)

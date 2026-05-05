@@ -106,7 +106,9 @@ public struct MarkdownView: View, @MainActor Equatable {
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }
-                snapshot = nextSnapshot
+                withAnimation(.snappy) {
+                    snapshot = nextSnapshot
+                }
                 updateTask = nil
             }
         }

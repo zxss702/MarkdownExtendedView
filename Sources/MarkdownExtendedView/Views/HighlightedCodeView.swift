@@ -50,6 +50,7 @@ public struct HighlightedCodeView: View {
             Text(" ")
                 .font(theme.codeBlockSwiftUIFont)
                 .codeSelectionTextPassThrough()
+                .contentTransition(.numericText(countsDown: true))
         } else {
             tokens.reduce(SwiftUI.Text("")) { result, token in
                 result + SwiftUI.Text(token.text)
@@ -57,6 +58,7 @@ public struct HighlightedCodeView: View {
             }
             .font(theme.codeBlockSwiftUIFont)
             .codeSelectionTextPassThrough()
+            .contentTransition(.numericText(countsDown: true))
         }
     }
 
