@@ -50,8 +50,11 @@ public struct MarkdownView: View, @MainActor Equatable {
 #endif
             .onPreferenceChange(MarkdownViewWidthPreferenceKey.self, perform: updateMeasuredWidth(_:))
             .onAppear(perform: refreshLayoutSnapshot)
-            .onChange(of: content) { _, newValue in
-                scheduleSnapshotUpdate(for: newValue, debounce: true)
+            .onChange(of: content) { oldValue, newValue in
+                scheduleSnapshotUpdate(
+                    for: newValue,
+                    reason: .contentChange(old: oldValue, new: newValue)
+                )
             }
             .onChange(of: theme.layoutSignature) { _, _ in
                 refreshLayoutSnapshot()
@@ -79,18 +82,21 @@ public struct MarkdownView: View, @MainActor Equatable {
     }
 
     private func refreshLayoutSnapshot() {
-        scheduleSnapshotUpdate(for: content, debounce: false)
+        scheduleSnapshotUpdate(for: content, reason: .layout)
     }
 
-    private func scheduleSnapshotUpdate(for content: String, debounce: Bool) {
+    private func scheduleSnapshotUpdate(for content: String, reason: SnapshotUpdateReason) {
         updateTask?.cancel()
         let width = measuredWidth
         let theme = theme
+        let debounce = reason.debounce
+        let reconcileMode = reason.reconciliationMode
+        let shouldAnimate = reason.animatesSnapshotChange
 
         updateTask = Task.detached(priority: .utility) { [content] in
-            if debounce {
+            if let debounce {
                 do {
-                    try await Task.sleep(for: .milliseconds(500))
+                    try await Task.sleep(for: debounce)
                 } catch {
                     return
                 }
@@ -106,11 +112,74 @@ public struct MarkdownView: View, @MainActor Equatable {
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }
-                withAnimation(.snappy) {
-                    snapshot = nextSnapshot
-                }
+                let reconciledSnapshot = nextSnapshot.reusingBlockIdentities(
+                    from: snapshot,
+                    mode: reconcileMode
+                )
+                applySnapshot(reconciledSnapshot, animated: shouldAnimate)
                 updateTask = nil
             }
+        }
+    }
+
+    private func applySnapshot(_ nextSnapshot: MarkdownRenderSnapshot, animated: Bool) {
+        if animated {
+            withAnimation(.snappy) {
+                snapshot = nextSnapshot
+            }
+        } else {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                snapshot = nextSnapshot
+            }
+        }
+    }
+
+    private enum SnapshotUpdateReason: Sendable {
+        case layout
+        case contentChange(old: String, new: String)
+
+        var debounce: Duration? {
+            switch self {
+            case .layout:
+                return nil
+            case .contentChange(let old, let new):
+                return isIncrementalUpdate(from: old, to: new)
+                    ? .milliseconds(35)
+                    : .milliseconds(150)
+            }
+        }
+
+        var reconciliationMode: MarkdownSnapshotReconciliationMode {
+            switch self {
+            case .layout:
+                return .exact
+            case .contentChange(let old, let new):
+                return isIncrementalUpdate(from: old, to: new) ? .streaming : .exact
+            }
+        }
+
+        var animatesSnapshotChange: Bool {
+            switch self {
+            case .layout:
+                return false
+            case .contentChange(let old, let new):
+                return isIncrementalUpdate(from: old, to: new)
+            }
+        }
+
+        private func isIncrementalUpdate(from old: String, to new: String) -> Bool {
+            guard !old.isEmpty, new.count >= old.count else {
+                return false
+            }
+            if new.hasPrefix(old) {
+                return true
+            }
+
+            let commonPrefixCount = zip(old, new).prefix { $0 == $1 }.count
+            let requiredPrefixCount = Int((Double(old.count) * 0.8).rounded(.down))
+            return commonPrefixCount >= max(1, requiredPrefixCount)
         }
     }
 }

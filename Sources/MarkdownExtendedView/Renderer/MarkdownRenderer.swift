@@ -21,6 +21,7 @@ struct MarkdownRenderer: View {
         VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
             ForEach(snapshot.blocks) { block in
                 renderBlock(block.markup)
+                    .modifier(MarkdownBlockInsertionModifier(animationKind: block.animationKind))
             }
         }
         .lineSpacing(theme.paragraphSpacing)
@@ -50,6 +51,7 @@ struct MarkdownRenderer: View {
                 SwiftUI.Text(htmlBlock.rawHTML)
                     .font(theme.codeSwiftUIFont)
                     .foregroundColor(theme.secondaryTextColor)
+                    .markdownTextContentTransition()
                     .selectionTextPassThrough()
             )
         } else {
@@ -66,6 +68,7 @@ struct MarkdownRenderer: View {
             .foregroundColor(theme.textColor)
             .padding(.top, heading.level == 1 ? 16 : 8)
             .padding(.bottom, 4)
+            .markdownTextContentTransition()
     }
 
     // MARK: - Paragraph
@@ -82,6 +85,7 @@ struct MarkdownRenderer: View {
             renderInlineChildren(paragraph)
                 .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
+                .markdownTextContentTransition()
         }
     }
 
@@ -113,8 +117,8 @@ struct MarkdownRenderer: View {
             } else {
                 Text(codeBlock.code.trimmingCharacters(in: .newlines))
                     .font(theme.codeBlockSwiftUIFont)
-                    .contentTransition(.numericText(countsDown: true))
                     .foregroundColor(theme.textColor)
+                    .markdownTextContentTransition()
             }
         }
         .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: false))
@@ -191,7 +195,6 @@ struct MarkdownRenderer: View {
         HStack(alignment: .top, spacing: 4) {
             Text(bullet)
                 .font(theme.bodySwiftUIFont)
-                .contentTransition(.numericText(countsDown: true))
                 .foregroundColor(theme.textColor)
                 .selectionTextPassThrough()
 
@@ -395,6 +398,7 @@ struct MarkdownRenderer: View {
         switch element {
         case .text(let text, let style):
             styledText(text, style: style)
+                .markdownTextContentTransition()
                 .selectionTextPassThrough()
 
         case .link(let link):
@@ -638,7 +642,6 @@ extension View {
     func selectionTextPassThrough() -> some View {
 #if os(macOS)
         self
-            .contentTransition(.numericText(countsDown: true))
             .allowsHitTesting(false)
             .pointerStyle(.horizontalText)
 #else
@@ -650,13 +653,65 @@ extension View {
     func buttonLink() -> some View {
 #if os(macOS)
         self
-            .contentTransition(.numericText(countsDown: true))
             .buttonStyle(.borderless)
             .contentShape(Rectangle())
             .pointerStyle(.link)
 #else
         self
 #endif
+    }
+}
+
+private struct MarkdownBlockInsertionModifier: ViewModifier {
+    let animationKind: MarkdownBlockAnimationKind
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch animationKind {
+        case .text:
+            content
+        case .nonText:
+            content.transition(.markdownNonTextInsertion)
+        }
+    }
+}
+
+private struct MarkdownNonTextInsertionStateModifier: ViewModifier {
+    let opacity: Double
+    let blurRadius: CGFloat
+    let scale: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .blur(radius: blurRadius)
+            .scaleEffect(scale, anchor: .bottomLeading)
+    }
+}
+
+private extension AnyTransition {
+    static var markdownNonTextInsertion: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(
+                active: MarkdownNonTextInsertionStateModifier(
+                    opacity: 0,
+                    blurRadius: 4,
+                    scale: 0
+                ),
+                identity: MarkdownNonTextInsertionStateModifier(
+                    opacity: 1,
+                    blurRadius: 0,
+                    scale: 1
+                )
+            ),
+            removal: .identity
+        )
+    }
+}
+
+private extension View {
+    func markdownTextContentTransition() -> some View {
+        contentTransition(.numericText())
     }
 }
 

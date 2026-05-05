@@ -24,14 +24,12 @@ struct MCodeReferenceBlockView: View {
                     .lineLimit(1)
                     .font(theme.codeSwiftUIFont.weight(.semibold))
                     .foregroundStyle(theme.secondaryTextColor)
-                    .contentTransition(.numericText(countsDown: true))
                 
                 if let detailText {
                     Text(detailText)
                         .lineLimit(1)
                         .font(lineNumberFont)
                         .foregroundStyle(theme.secondaryTextColor.opacity(0.9))
-                        .contentTransition(.numericText(countsDown: true))
                 }
             }
             .padding(.horizontal, 8)

@@ -86,6 +86,107 @@ struct MarkdownRenderSnapshot: Sendable {
         max((width * 2).rounded(.toNearestOrEven) / 2, 0)
     }
 
+    func reusingBlockIdentities(
+        from previous: MarkdownRenderSnapshot,
+        mode: MarkdownSnapshotReconciliationMode
+    ) -> MarkdownRenderSnapshot {
+        guard !blocks.isEmpty, !previous.blocks.isEmpty else {
+            return self
+        }
+
+        var resolvedIDs = Array<MarkdownBlockIdentity?>(repeating: nil, count: blocks.count)
+        var matchedPrevious = Array(repeating: false, count: previous.blocks.count)
+        var matchedNext = Array(repeating: false, count: blocks.count)
+
+        var lowerBound = 0
+        while lowerBound < previous.blocks.count,
+              lowerBound < blocks.count,
+              previous.blocks[lowerBound].fingerprint == blocks[lowerBound].fingerprint {
+            resolvedIDs[lowerBound] = previous.blocks[lowerBound].id
+            matchedPrevious[lowerBound] = true
+            matchedNext[lowerBound] = true
+            lowerBound += 1
+        }
+
+        var previousUpper = previous.blocks.count - 1
+        var nextUpper = blocks.count - 1
+        while previousUpper >= lowerBound,
+              nextUpper >= lowerBound,
+              previous.blocks[previousUpper].fingerprint == blocks[nextUpper].fingerprint {
+            resolvedIDs[nextUpper] = previous.blocks[previousUpper].id
+            matchedPrevious[previousUpper] = true
+            matchedNext[nextUpper] = true
+
+            if previousUpper == 0 || nextUpper == 0 {
+                break
+            }
+            previousUpper -= 1
+            nextUpper -= 1
+        }
+
+        if mode == .streaming,
+           lowerBound < previous.blocks.count,
+           lowerBound < blocks.count,
+           !matchedPrevious[lowerBound],
+           !matchedNext[lowerBound],
+           previous.blocks[lowerBound].canReuseIdentityWhenStreaming(to: blocks[lowerBound]) {
+            resolvedIDs[lowerBound] = previous.blocks[lowerBound].id
+            matchedPrevious[lowerBound] = true
+            matchedNext[lowerBound] = true
+        }
+
+        var availablePreviousIDs: [MarkdownBlockFingerprint: [Int]] = [:]
+        for index in previous.blocks.indices where !matchedPrevious[index] {
+            availablePreviousIDs[previous.blocks[index].fingerprint, default: []].append(index)
+        }
+
+        for index in blocks.indices where !matchedNext[index] {
+            let fingerprint = blocks[index].fingerprint
+            guard var candidates = availablePreviousIDs[fingerprint],
+                  let previousIndex = candidates.first else {
+                continue
+            }
+
+            candidates.removeFirst()
+            availablePreviousIDs[fingerprint] = candidates
+            resolvedIDs[index] = previous.blocks[previousIndex].id
+            matchedPrevious[previousIndex] = true
+        }
+
+        var usedIDs = Set<MarkdownBlockIdentity>()
+        let resolvedBlocks = blocks.indices.map { index in
+            let proposedID = resolvedIDs[index] ?? blocks[index].id
+            let uniqueID = uniqueIdentity(for: proposedID, usedIDs: &usedIDs)
+            return blocks[index].withIdentity(uniqueID)
+        }
+
+        return MarkdownRenderSnapshot(blocks: resolvedBlocks, estimatedHeight: estimatedHeight)
+    }
+
+    private func uniqueIdentity(
+        for identity: MarkdownBlockIdentity,
+        usedIDs: inout Set<MarkdownBlockIdentity>
+    ) -> MarkdownBlockIdentity {
+        guard usedIDs.contains(identity) else {
+            usedIDs.insert(identity)
+            return identity
+        }
+
+        var occurrence = identity.occurrence + 1
+        while true {
+            let candidate = MarkdownBlockIdentity(
+                kind: identity.kind,
+                occurrence: occurrence,
+                digest: identity.digest
+            )
+            if !usedIDs.contains(candidate) {
+                usedIDs.insert(candidate)
+                return candidate
+            }
+            occurrence += 1
+        }
+    }
+
     private static func parsedBlocks(for content: String) async -> [MarkdownBlockNode] {
         if let cached = await MainActor.run(resultType: [MarkdownBlockNode]?.self, body: {
             MarkdownParsedBlocksCache.shared.object(forKey: content as NSString)?.blocks
@@ -135,6 +236,8 @@ struct MarkdownRenderSnapshot: Sendable {
                     occurrence: occurrence,
                     digest: fingerprint.digest
                 ),
+                fingerprint: fingerprint,
+                animationKind: MarkdownBlockAnimationKind(markup: child),
                 markup: child
             )
         }
@@ -159,9 +262,69 @@ struct MarkdownRenderSnapshot: Sendable {
     }
 }
 
+enum MarkdownSnapshotReconciliationMode: Sendable {
+    case exact
+    case streaming
+}
+
 struct MarkdownBlockNode: Identifiable, @unchecked Sendable {
     let id: MarkdownBlockIdentity
+    fileprivate let fingerprint: MarkdownBlockFingerprint
+    let animationKind: MarkdownBlockAnimationKind
     let markup: any Markup
+
+    fileprivate func withIdentity(_ id: MarkdownBlockIdentity) -> MarkdownBlockNode {
+        MarkdownBlockNode(
+            id: id,
+            fingerprint: fingerprint,
+            animationKind: animationKind,
+            markup: markup
+        )
+    }
+
+    fileprivate func canReuseIdentityWhenStreaming(to next: MarkdownBlockNode) -> Bool {
+        guard animationKind == .text, next.animationKind == .text else {
+            return false
+        }
+
+        switch (markup, next.markup) {
+        case let (previous as Heading, current as Heading):
+            return previous.level == current.level &&
+                MarkdownBlockNode.hasGrowingTextPrefix(from: previous.plainText, to: current.plainText)
+
+        case let (previous as Paragraph, current as Paragraph):
+            return MarkdownBlockNode.hasGrowingTextPrefix(from: previous.plainText, to: current.plainText)
+
+        case let (previous as CodeBlock, current as CodeBlock):
+            return previous.language == current.language &&
+                previous.language != "mermaid" &&
+                MarkdownBlockNode.hasGrowingTextPrefix(from: previous.code, to: current.code)
+
+        case let (previous as HTMLBlock, current as HTMLBlock):
+            return MarkdownBlockNode.hasGrowingTextPrefix(from: previous.rawHTML, to: current.rawHTML)
+
+        default:
+            return false
+        }
+    }
+
+    private static func hasGrowingTextPrefix(from previous: String, to current: String) -> Bool {
+        guard !previous.isEmpty, current.count >= previous.count else {
+            return false
+        }
+        if current.hasPrefix(previous) {
+            return true
+        }
+
+        let commonPrefixCount = zip(previous, current).prefix { $0 == $1 }.count
+        let requiredPrefixCount: Int
+        if previous.count < 12 {
+            requiredPrefixCount = max(1, previous.count - 2)
+        } else {
+            requiredPrefixCount = Int((Double(previous.count) * 0.8).rounded(.down))
+        }
+        return commonPrefixCount >= requiredPrefixCount
+    }
 }
 
 struct MarkdownBlockIdentity: Hashable, Sendable {
@@ -170,7 +333,49 @@ struct MarkdownBlockIdentity: Hashable, Sendable {
     let digest: Int
 }
 
-private struct MarkdownBlockFingerprint: Hashable {
+enum MarkdownBlockAnimationKind: Sendable, Equatable {
+    case text
+    case nonText
+
+    init(markup: any Markup) {
+        switch markup {
+        case _ as Heading:
+            self = .text
+
+        case let paragraph as Paragraph:
+            let plainText = paragraph.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") ||
+                MarkdownBlockAnimationKind.containsImage(in: paragraph) {
+                self = .nonText
+            } else {
+                self = .text
+            }
+
+        case let codeBlock as CodeBlock:
+            self = codeBlock.language == "mermaid" ? .nonText : .text
+
+        case _ as HTMLBlock:
+            self = .text
+
+        default:
+            self = .nonText
+        }
+    }
+
+    private static func containsImage(in markup: any Markup) -> Bool {
+        for child in markup.children {
+            if child is Markdown.Image {
+                return true
+            }
+            if containsImage(in: child) {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+private struct MarkdownBlockFingerprint: Hashable, Sendable {
     let kind: String
     let digest: Int
 

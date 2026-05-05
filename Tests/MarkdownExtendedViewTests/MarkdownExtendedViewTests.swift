@@ -58,4 +58,114 @@ final class MarkdownExtendedViewTests: XCTestCase {
             theme.bodyFont.markdownLineHeight * 3 + theme.paragraphSpacing * 2
         )
     }
+
+    @MainActor
+    func testReconciledSnapshotKeepsUnchangedBlockIDsAfterMiddleInsertion() {
+        let previous = MarkdownRenderSnapshot.parse("""
+        # Title
+
+        First
+
+        Second
+        """)
+        let next = MarkdownRenderSnapshot.parse("""
+        # Title
+
+        Inserted
+
+        First
+
+        Second
+        """)
+        .reusingBlockIdentities(from: previous, mode: .exact)
+
+        XCTAssertEqual(next.blocks[0].id, previous.blocks[0].id)
+        XCTAssertEqual(next.blocks[2].id, previous.blocks[1].id)
+        XCTAssertEqual(next.blocks[3].id, previous.blocks[2].id)
+    }
+
+    @MainActor
+    func testStreamingReconcileReusesTailParagraphID() {
+        let previous = MarkdownRenderSnapshot.parse("""
+        Intro
+
+        Streaming text
+        """)
+        let next = MarkdownRenderSnapshot.parse("""
+        Intro
+
+        Streaming text continues
+        """)
+        .reusingBlockIdentities(from: previous, mode: .streaming)
+
+        XCTAssertEqual(next.blocks[0].id, previous.blocks[0].id)
+        XCTAssertEqual(next.blocks[1].id, previous.blocks[1].id)
+    }
+
+    @MainActor
+    func testStreamingReconcileReusesTailCodeBlockID() {
+        let previous = MarkdownRenderSnapshot.parse("""
+        ```swift
+        let value = 1
+        ```
+        """)
+        let next = MarkdownRenderSnapshot.parse("""
+        ```swift
+        let value = 1
+        print(value)
+        ```
+        """)
+        .reusingBlockIdentities(from: previous, mode: .streaming)
+
+        XCTAssertEqual(next.blocks[0].id, previous.blocks[0].id)
+    }
+
+    @MainActor
+    func testReconciledSnapshotKeepsDuplicateBlockIDsUnique() {
+        let previous = MarkdownRenderSnapshot.parse("Repeat")
+        let next = MarkdownRenderSnapshot.parse("""
+        Repeat
+
+        Repeat
+        """)
+        .reusingBlockIdentities(from: previous, mode: .exact)
+        let ids = next.blocks.map(\.id)
+
+        XCTAssertEqual(ids.first, previous.blocks.first?.id)
+        XCTAssertEqual(Set(ids).count, ids.count)
+    }
+
+    @MainActor
+    func testSnapshotClassifiesTextAndNonTextAnimationKinds() {
+        let snapshot = MarkdownRenderSnapshot.parse("""
+        Text
+
+        ```swift
+        print("hello")
+        ```
+
+        ```mermaid
+        graph TD
+            A --> B
+        ```
+
+        ![Alt](https://example.com/image.png)
+
+        | A |
+        | - |
+        | B |
+
+        $$x^2$$
+        """)
+        let kinds = snapshot.blocks.map(\.animationKind)
+
+        XCTAssertEqual(kinds, [
+            .text,
+            .text,
+            .nonText,
+            .nonText,
+            .nonText,
+            .nonText,
+        ])
+    }
 }

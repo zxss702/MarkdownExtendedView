@@ -12,33 +12,19 @@ import SwiftUI
 /// each token with the appropriate color from the theme's ``SyntaxColors``.
 public struct HighlightedCodeView: View {
 
+    private let code: String
+    private let language: String?
     private let theme: MarkdownTheme
-    @State private var lines: [[Token]]
 
     public init(code: String, language: String?, theme: MarkdownTheme) {
+        self.code = code.trimmingCharacters(in: .newlines)
+        self.language = language
         self.theme = theme
-
-        let normalizedCode = code.trimmingCharacters(in: .newlines)
-        let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
-        let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines
-        let resolvedLines = cachedLines ?? Self.makeHighlightedLines(
-            code: normalizedCode,
-            language: language
-        )
-
-        if cachedLines == nil {
-            HighlightedCodeSnapshotCache.shared.setObject(
-                HighlightedCodeSnapshot(lines: resolvedLines),
-                forKey: cacheKey as NSString
-            )
-        }
-
-        _lines = State(initialValue: resolvedLines)
     }
     
     public var body: some View {
         VStack(alignment: .leading, spacing: theme.codeLineSpacing) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, lineTokens in
+            ForEach(Array(Self.highlightedLines(code: code, language: language).enumerated()), id: \.offset) { _, lineTokens in
                 lineView(for: lineTokens)
             }
         }
@@ -50,7 +36,7 @@ public struct HighlightedCodeView: View {
             Text(" ")
                 .font(theme.codeBlockSwiftUIFont)
                 .codeSelectionTextPassThrough()
-                .contentTransition(.numericText(countsDown: true))
+                .contentTransition(.numericText())
         } else {
             tokens.reduce(SwiftUI.Text("")) { result, token in
                 result + SwiftUI.Text(token.text)
@@ -58,7 +44,7 @@ public struct HighlightedCodeView: View {
             }
             .font(theme.codeBlockSwiftUIFont)
             .codeSelectionTextPassThrough()
-            .contentTransition(.numericText(countsDown: true))
+            .contentTransition(.numericText())
         }
     }
 
@@ -84,6 +70,21 @@ public struct HighlightedCodeView: View {
     private static func makeHighlightedLines(code: String, language: String?) -> [[Token]] {
         let tokens = SyntaxHighlighter().tokenize(code, language: language)
         return splitIntoLines(tokens)
+    }
+
+    @MainActor
+    private static func highlightedLines(code: String, language: String?) -> [[Token]] {
+        let cacheKey = Self.cacheKey(for: code, language: language)
+        if let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines {
+            return cachedLines
+        }
+
+        let resolvedLines = Self.makeHighlightedLines(code: code, language: language)
+        HighlightedCodeSnapshotCache.shared.setObject(
+            HighlightedCodeSnapshot(lines: resolvedLines),
+            forKey: cacheKey as NSString
+        )
+        return resolvedLines
     }
 
     private static func cacheKey(for code: String, language: String?) -> String {

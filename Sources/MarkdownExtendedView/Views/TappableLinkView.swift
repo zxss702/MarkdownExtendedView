@@ -27,6 +27,7 @@ struct TappableLinkView: View {
     var body: some View {
         linkText
             .foregroundColor(theme.linkColor)
+            .contentTransition(.numericText())
             .onTapGesture {
                 handleTap()
             }
