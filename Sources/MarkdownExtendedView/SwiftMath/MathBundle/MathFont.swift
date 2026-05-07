@@ -96,7 +96,7 @@ internal extension CTFont {
         return UInt(CTFontGetUnitsPerEm(self))
     }
 }
-private class BundleManager {
+private final class BundleManager: @unchecked Sendable {
     //Note: below should be lightweight and without threadsafe problem.
     static internal let manager = BundleManager()
 

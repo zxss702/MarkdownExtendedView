@@ -71,7 +71,7 @@ public class MTMathAtomFactory {
     ]
     
     private static let delimValueLock = NSLock()
-    static var _delimValueToName = [String: String]()
+    nonisolated(unsafe) static var _delimValueToName = [String: String]()
     public static var delimValueToName: [String: String] {
         if _delimValueToName.isEmpty {
             var output = [String: String]()
@@ -116,7 +116,7 @@ public class MTMathAtomFactory {
     ]
     
     private static let accentValueLock = NSLock()
-    static var _accentValueToName: [String: String]? = nil
+    nonisolated(unsafe) static var _accentValueToName: [String: String]? = nil
     public static var accentValueToName: [String: String] {
         if _accentValueToName == nil {
             var output = [String: String]()
@@ -148,7 +148,7 @@ public class MTMathAtomFactory {
         return commands.keys.map { String($0) }
     }
     
-    static var supportedLatexSymbols: [String: MTMathAtom] = [
+    nonisolated(unsafe) static var supportedLatexSymbols: [String: MTMathAtom] = [
         "square" : MTMathAtomFactory.placeholder(),
         
          // Greek characters
@@ -553,7 +553,7 @@ public class MTMathAtomFactory {
         "scriptscriptstyle" : MTMathStyle(style: .scriptOfScript),
     ]
 	
-	static var supportedAccentedCharacters: [Character: (String, String)] = [
+	static let supportedAccentedCharacters: [Character: (String, String)] = [
 		// Acute accents
 		"á": ("acute", "a"), "é": ("acute", "e"), "í": ("acute", "i"),
 		"ó": ("acute", "o"), "ú": ("acute", "u"), "ý": ("acute", "y"),
@@ -596,7 +596,7 @@ public class MTMathAtomFactory {
 	]
     
     private static let textToLatexLock = NSLock()
-    static var _textToLatexSymbolName: [String: String]? = nil
+    nonisolated(unsafe) static var _textToLatexSymbolName: [String: String]? = nil
     public static var textToLatexSymbolName: [String: String] {
         get {
             if self._textToLatexSymbolName == nil {

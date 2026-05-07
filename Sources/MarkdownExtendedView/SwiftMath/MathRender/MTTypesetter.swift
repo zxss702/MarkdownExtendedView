@@ -20,28 +20,20 @@ enum InterElementSpaceType : Int {
     case nsThick
 }
 
-var interElementSpaceArray = [[InterElementSpaceType]]()
-private let interElementLock = NSLock()
+let interElementSpaceArray: [[InterElementSpaceType]] = [
+    //   ordinary   operator   binary     relation  open       close     punct     fraction
+      [.none,     .thin,     .nsMedium, .nsThick, .none,     .none,    .none,    .nsThin],    // ordinary
+       [.thin,     .thin,     .invalid,  .nsThick, .none,     .none,    .none,    .nsThin],    // operator
+       [.nsMedium, .nsMedium, .invalid,  .invalid, .nsMedium, .invalid, .invalid, .nsMedium],  // binary
+       [.nsThick,  .nsThick,  .invalid,  .none,    .nsThick,  .none,    .none,    .nsThick],   // relation
+       [.none,     .none,     .invalid,  .none,    .none,     .none,    .none,    .none],      // open
+       [.none,     .thin,     .nsMedium, .nsThick, .none,     .none,    .none,    .nsThin],    // close
+       [.nsThin,   .nsThin,   .invalid,  .nsThin,  .nsThin,   .nsThin,  .nsThin,  .nsThin],    // punct
+       [.nsThin,   .thin,     .nsMedium, .nsThick, .nsThin,   .none,    .nsThin,  .nsThin],    // fraction
+       [.nsMedium, .nsThin,   .nsMedium, .nsThick, .none,     .none,    .none,    .nsThin]     // radical
+]
 
 func getInterElementSpaces() -> [[InterElementSpaceType]] {
-    if interElementSpaceArray.isEmpty {
-        
-        interElementLock.lock()
-        defer { interElementLock.unlock() }
-        guard interElementSpaceArray.isEmpty else { return interElementSpaceArray }
-        
-        interElementSpaceArray =
-        //   ordinary   operator   binary     relation  open       close     punct     fraction
-        [  [.none,     .thin,     .nsMedium, .nsThick, .none,     .none,    .none,    .nsThin],    // ordinary
-           [.thin,     .thin,     .invalid,  .nsThick, .none,     .none,    .none,    .nsThin],    // operator
-           [.nsMedium, .nsMedium, .invalid,  .invalid, .nsMedium, .invalid, .invalid, .nsMedium],  // binary
-           [.nsThick,  .nsThick,  .invalid,  .none,    .nsThick,  .none,    .none,    .nsThick],   // relation
-           [.none,     .none,     .invalid,  .none,    .none,     .none,    .none,    .none],      // open
-           [.none,     .thin,     .nsMedium, .nsThick, .none,     .none,    .none,    .nsThin],    // close
-           [.nsThin,   .nsThin,   .invalid,  .nsThin,  .nsThin,   .nsThin,  .nsThin,  .nsThin],    // punct
-           [.nsThin,   .thin,     .nsMedium, .nsThick, .nsThin,   .none,    .nsThin,  .nsThin],    // fraction
-           [.nsMedium, .nsThin,   .nsMedium, .nsThick, .none,     .none,    .none,    .nsThin]]    // radical
-    }
     return interElementSpaceArray
 }
 

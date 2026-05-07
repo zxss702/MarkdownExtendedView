@@ -12,19 +12,7 @@ import CoreText
 import SwiftUI
 
 func isIos6Supported() -> Bool {
-    if !MTDisplay.initialized {
-#if os(iOS) || os(visionOS)
-        let reqSysVer = "6.0"
-        let currSysVer = UIDevice.current.systemVersion
-        if currSysVer.compare(reqSysVer, options: .numeric) != .orderedAscending {
-            MTDisplay.supported = true
-        }
-#else
-        MTDisplay.supported = true
-#endif
-        MTDisplay.initialized = true
-    }
-    return MTDisplay.supported
+    return true
 }
 
 // The Downshift protocol allows an MTDisplay to be shifted down by a given amount.
@@ -36,10 +24,6 @@ protocol DownShift {
 
 /// The base class for rendering a math equation.
 public class MTDisplay:NSObject {
-    
-    // needed for isIos6Supported() func above
-    static var initialized = false
-    static var supported = false
     
     /// Draws itself in the given graphics context.
     public func draw(_ context:CGContext) {

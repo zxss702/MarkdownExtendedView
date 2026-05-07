@@ -123,7 +123,7 @@ public enum MTMathAtomType: Int, CustomStringConvertible, Comparable {
  The fontstyle of the atom determines what style the character is rendered in. This only applies to atoms
  of type kMTMathAtomVariable and kMTMathAtomNumber. None of the other atom types change their font style.
  */
-public enum MTFontStyle:Int {
+public enum MTFontStyle: Int, Sendable {
     /// The default latex rendering style. i.e. variables are italic and numbers are roman.
     case defaultStyle = 0,
     /// Roman font style i.e. \mathrm
@@ -627,7 +627,7 @@ public class MTMathSpace: MTMathAtom {
 /**
  Styling of a line of math
  */
-public enum MTLineStyle:Int, Comparable {
+public enum MTLineStyle: Int, Sendable, Comparable {
     /// Display style
     case display
     /// Text style (inline)
