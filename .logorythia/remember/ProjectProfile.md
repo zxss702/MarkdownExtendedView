@@ -8,8 +8,14 @@
   - `Theme/`：主题系统（`Theme.swift`）。
   - `Renderer/`：Markdown 渲染核心（`MarkdownRenderer.swift`、`LaTeXView.swift`）。
   - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。
+  - `SwiftMath/`：内置数学排版引擎（原 `ExtendedSwiftMath` 外部依赖已移除并内嵌）。
+    - `MathBundle/`：字体资源与 bundling（`MathFont.swift`）。
+    - `MathRender/`：核心排版与渲染（`MTFontManager`、`MTMathAtomFactory`、`MTMathList`、`MTMathListDisplay`、`MTTypesetter`）。
 - `Tests/MarkdownExtendedViewTests/`：单元测试与功能测试。
 - `Package.swift`：依赖管理与包配置。
 - `README.md`：对外文档。
 
-关键配置入口：`Package.swift` 定义依赖（如 `ExtendedSwiftMath`）；`Features.swift` 曾用于特性开关，现已移除，默认全量启用。
+关键配置入口：`Package.swift` 已移除 `ExtendedSwiftMath` 外部依赖，`SwiftMath` 以内置源码形式存在；`Features.swift` 曾用于特性开关，现已移除，默认全量启用。
+
+工程约束：
+- `SwiftMath` 为内置 fork，非外部包；修改其源码时需同步处理并发安全标注（`nonisolated(unsafe)`、`@unchecked Sendable`）以避免编译警告。
