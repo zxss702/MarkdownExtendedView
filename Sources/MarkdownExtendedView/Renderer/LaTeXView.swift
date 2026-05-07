@@ -5,7 +5,7 @@
 // Licensed under MIT License
 
 import SwiftUI
-import ExtendedSwiftMath
+import Synchronization
 
 /// A view that renders LaTeX equations using SwiftMath.
 struct LaTeXView: View {
@@ -51,32 +51,80 @@ struct LaTeXView: View {
     }
 
     private var calculatedAscent: CGFloat {
-        var error: NSError?
-        guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error) else { return 0 }
         let fSize = isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize
-        guard let font = MTFontManager.fontManager.defaultFont?.copy(withSize: fSize) else { return 0 }
+        let displayList = MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fSize, isBlock: isBlock)
+        return displayList?.ascent ?? 0
+    }
+}
+
+// MARK: - Math Cache
+
+final class MathDisplayCache: @unchecked Sendable {
+    static let shared = MathDisplayCache()
+    private let cache = Mutex<[String: MTMathListDisplay]>([:])
+
+    func getDisplay(latex: String, fontSize: CGFloat, isBlock: Bool) -> MTMathListDisplay? {
+        let key = "\(latex)_\(fontSize)_\(isBlock)"
+        
+        if let display = cache.withLock({ $0[key] }) {
+            return display
+        }
+        
+        var error: NSError?
+        guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error),
+              let font = MTFontManager.manager.defaultFont?.copy(withSize: fontSize) else {
+            return nil
+        }
+        
         let style: MTLineStyle = isBlock ? .display : .text
         if let displayList = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: 0) {
-            return displayList.ascent
+            cache.withLock { $0[key] = displayList }
+            return displayList
         }
-        return 0
+        return nil
     }
 }
 
 // MARK: - MathView (SwiftMath Wrapper)
 
-/// A SwiftUI wrapper for SwiftMath's MTMathUILabel.
-struct MathView {
-
+/// A pure SwiftUI view that renders LaTeX using a Canvas.
+struct MathView: View {
     let latex: String
+    var fontSize: CGFloat = 16
+    var textColor: MTColor = .black
+    var labelMode: MTMathUILabelMode = .display
 
-    fileprivate var fontSize: CGFloat = 16
-    fileprivate var textColor: MTColor = .black
-    fileprivate var textAlignment: MTTextAlignment = .right
-    fileprivate var labelMode: MTMathUILabelMode = .display
+    private var displayList: MTMathListDisplay? {
+        MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fontSize, isBlock: labelMode == .display)
+    }
 
-    init(latex: String) {
-        self.latex = latex
+    var body: some View {
+        if let displayList = displayList {
+            Canvas { context, size in
+                context.withCGContext { cgContext in
+                    displayList.textColor = textColor
+                    
+                    // SwiftUI Canvas coordinate system is Y-down (0,0 is top-left)
+                    // CoreText expects Y-up (0,0 is bottom-left).
+                    // We flip the coordinate system.
+                    cgContext.translateBy(x: 0, y: size.height)
+                    cgContext.scaleBy(x: 1.0, y: -1.0)
+                    
+                    // MTDisplay is drawn with origin at the baseline.
+                    // Its bounds are: Y from -descent to +ascent.
+                    // By shifting up by `descent`, the bottom of the display rests at Y=0 (bottom of the Canvas).
+                    cgContext.translateBy(x: 0, y: displayList.descent)
+                    
+                    displayList.draw(cgContext)
+                }
+            }
+            .frame(width: displayList.width, height: displayList.ascent + displayList.descent)
+        } else {
+            // Fallback for parsing errors
+            Text(latex)
+                .font(.system(size: fontSize))
+                .foregroundColor(Color(textColor))
+        }
     }
 
     // MARK: - Modifiers
@@ -98,70 +146,7 @@ struct MathView {
         view.labelMode = mode
         return view
     }
-
-    func textAlignment(_ alignment: MTTextAlignment) -> MathView {
-        var view = self
-        view.textAlignment = alignment
-        return view
-    }
 }
-
-#if os(iOS)
-extension MathView: UIViewRepresentable {
-    func makeUIView(context: Context) -> MTMathUILabel {
-        let label = MTMathUILabel()
-        label.latex = latex
-        label.fontSize = fontSize
-        label.textColor = textColor
-        label.textAlignment = textAlignment
-        label.labelMode = labelMode
-        label.backgroundColor = .clear
-        return label
-    }
-
-    func updateUIView(_ uiView: MTMathUILabel, context: Context) {
-        uiView.latex = latex
-        uiView.fontSize = fontSize
-        uiView.textColor = textColor
-        uiView.textAlignment = textAlignment
-        uiView.labelMode = labelMode
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MTMathUILabel, context: Context) -> CGSize? {
-        // ALWAYS pass 0 width to disable MTMathUILabel's buggy internal line wrapping.
-        // This ensures the math formula stays on one line (or wraps cleanly as a single block in FlowLayout).
-        uiView.sizeThatFits(CGSize(width: 0, height: 0))
-    }
-}
-#elseif os(macOS)
-extension MathView: NSViewRepresentable {
-    func makeNSView(context: Context) -> MTMathUILabel {
-        let label = MTMathUILabel()
-        label.latex = latex
-        label.fontSize = fontSize
-        label.textColor = textColor
-        label.textAlignment = textAlignment
-        label.labelMode = labelMode
-        // Note: backgroundColor not accessible on macOS, view is transparent by default
-        
-        return label
-    }
-
-    func updateNSView(_ nsView: MTMathUILabel, context: Context) {
-        nsView.latex = latex
-        nsView.fontSize = fontSize
-        nsView.textColor = textColor
-        nsView.textAlignment = textAlignment
-        nsView.labelMode = labelMode
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MTMathUILabel, context: Context) -> CGSize? {
-        // ALWAYS pass 0 width to disable MTMathUILabel's buggy internal line wrapping.
-        // This ensures the math formula stays on one line (or wraps cleanly as a single block in FlowLayout).
-        nsView.sizeThatFits(CGSize(width: 0, height: 0))
-    }
-}
-#endif
 
 // MARK: - Preview
 

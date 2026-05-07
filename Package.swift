@@ -17,19 +17,17 @@ let package = Package(
     ],
     dependencies: [
         // Apple's official Markdown parser (CommonMark + GFM extensions)
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", branch: "main"),
-        // Extended LaTeX rendering for SwiftUI (fork of SwiftMath with additional symbol coverage)
-        .package(url: "https://github.com/zxss702/ExtendedSwiftMath.git", branch: "main")
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", branch: "main")
     ],
     targets: [
         .target(
             name: "MarkdownExtendedView",
             dependencies: [
-                .product(name: "Markdown", package: "swift-markdown"),
-                .product(name: "ExtendedSwiftMath", package: "ExtendedSwiftMath"),
+                .product(name: "Markdown", package: "swift-markdown")
             ],
             resources: [
                 .process("Views/mermaid.js"),
+                .copy("SwiftMath/mathFonts.bundle")
             ]
         ),
         .testTarget(

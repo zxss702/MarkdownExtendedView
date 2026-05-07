@@ -1,6 +1,5 @@
 import Foundation
 import Markdown
-import ExtendedSwiftMath
 
 #if canImport(AppKit)
 import AppKit
@@ -93,7 +92,7 @@ enum MarkdownHeightEstimator {
         if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") {
             let latex = String(plainText.dropFirst(2).dropLast(2))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let formulaData = await measureFormula(
+            let formulaData = measureFormula(
                 latex,
                 fontSize: theme.latexBlockFontSize,
                 mode: .display,
@@ -341,7 +340,7 @@ enum MarkdownHeightEstimator {
         case .text(let text):
             return textFlowItems(text, font: theme.bodyFont)
         case .latex(let latex, _):
-            let formulaData = await measureFormula(
+            let formulaData = measureFormula(
                 latex,
                 fontSize: theme.latexInlineFontSize,
                 mode: .text,
@@ -409,12 +408,6 @@ enum MarkdownHeightEstimator {
         return ceil(max(totalHeight, fallbackLineHeight))
     }
 
-    @MainActor
-    private final class MTMathUILabelCache {
-        static let shared = MTMathUILabel()
-    }
-
-    @MainActor
     private static func measureFormula(
         _ latex: String,
         fontSize: CGFloat,
@@ -425,7 +418,7 @@ enum MarkdownHeightEstimator {
         guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error) else {
             return (CGSize(width: 1, height: fontSize), fontSize / 2)
         }
-        guard let font = MTFontManager.fontManager.defaultFont?.copy(withSize: fontSize) else {
+        guard let font = MTFontManager.manager.defaultFont?.copy(withSize: fontSize) else {
             return (CGSize(width: 1, height: fontSize), fontSize / 2)
         }
         let style: MTLineStyle = mode == .display ? .display : .text
