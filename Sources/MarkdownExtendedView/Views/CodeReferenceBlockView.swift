@@ -43,6 +43,15 @@ struct MCodeReferenceBlockView: View {
         .buttonStyle(.plain)
         .alignmentGuide(.firstTextBaseline) { _ in baseline }
         .alignmentGuide(.lastTextBaseline) { _ in baseline }
+#if os(macOS)
+        .onHover { isHovered in
+            if isHovered {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+#endif
     }
 
     private var titleText: String {
