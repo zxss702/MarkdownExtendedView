@@ -21,19 +21,25 @@ public extension View {
 
 struct SelectableMarkdownRendererViewModifier: ViewModifier {
     @State private var model = SelectionModel()
+    
+    @State private var textLayouts: SwiftUI.Text.LayoutKey.Value = []
+    @State private var formulas: [FormulaSelectionData] = []
 
     func body(content: Content) -> some View {
         content
-            .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { textLayouts in
-                Color.clear.backgroundPreferenceValue(FormulaSelectionKey.self) { formulas in
-                    GeometryReader { geometry in
-                        let input = SelectionLayoutInput(base: textLayouts, formulas: formulas, geometry: geometry)
-
-                        SelectionInteractionOverlay(model: model)
-                            .task(id: input) {
-                                await model.updateLayout(input)
-                            }
-                    }
+            .onPreferenceChange(SwiftUI.Text.LayoutKey.self) { layouts in
+                self.textLayouts = layouts
+            }
+            .onPreferenceChange(FormulaSelectionKey.self) { formulas in
+                self.formulas = formulas
+            }
+            .background {
+                GeometryReader { geometry in
+                    let input = SelectionLayoutInput(base: textLayouts, formulas: formulas, geometry: geometry)
+                    SelectionInteractionOverlay(model: model)
+                        .task(id: input) {
+                            await model.updateLayout(input)
+                        }
                 }
             }
             .overlay {
