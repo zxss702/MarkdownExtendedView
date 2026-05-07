@@ -24,14 +24,16 @@ struct SelectableMarkdownRendererViewModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { value in
-                GeometryReader { geometry in
-                    let input = SelectionLayoutInput(base: value, geometry: geometry)
+            .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { textLayouts in
+                content.backgroundPreferenceValue(FormulaSelectionKey.self) { formulas in
+                    GeometryReader { geometry in
+                        let input = SelectionLayoutInput(base: textLayouts, formulas: formulas, geometry: geometry)
 
-                    SelectionInteractionOverlay(model: model)
-                        .task(id: input) {
-                            await model.updateLayout(input)
-                        }
+                        SelectionInteractionOverlay(model: model)
+                            .task(id: input) {
+                                await model.updateLayout(input)
+                            }
+                    }
                 }
             }
             .overlay {

@@ -119,6 +119,9 @@ struct MathView: View {
                 }
             }
             .frame(width: displayList.width, height: displayList.ascent + displayList.descent)
+            .anchorPreference(key: FormulaSelectionKey.self, value: .bounds) { bounds in
+                [FormulaSelectionData(latex: "$\(latex)$", bounds: bounds)]
+            }
         } else {
             // Fallback for parsing errors
             Text(latex)

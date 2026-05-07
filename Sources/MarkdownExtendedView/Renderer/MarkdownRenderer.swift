@@ -556,7 +556,7 @@ struct MarkdownRenderer: View {
             return textInlineFlowElements(code.code, style: style.union(.code))
 
         case _ as SoftBreak:
-            return textInlineFlowElements(" ", style: style)
+            return [.lineBreak]
 
         case _ as LineBreak:
             return [.lineBreak]

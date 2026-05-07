@@ -8,16 +8,38 @@ import CoreText
 import Foundation
 import SwiftUI
 
+public struct FormulaSelectionData: Equatable, Sendable {
+    public let id: UUID
+    public let latex: String
+    public let bounds: Anchor<CGRect>
+    
+    public init(id: UUID = UUID(), latex: String, bounds: Anchor<CGRect>) {
+        self.id = id
+        self.latex = latex
+        self.bounds = bounds
+    }
+}
+
+public struct FormulaSelectionKey: PreferenceKey {
+    public static var defaultValue: [FormulaSelectionData] { [] }
+    public static func reduce(value: inout [FormulaSelectionData], nextValue: () -> [FormulaSelectionData]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 struct SelectionLayoutInput: Equatable, @unchecked Sendable {
     let base: SwiftUI.Text.LayoutKey.Value
+    let formulas: [FormulaSelectionData]
     let geometry: GeometryProxy
 
     static func == (lhs: SelectionLayoutInput, rhs: SelectionLayoutInput) -> Bool {
-        lhs.base == rhs.base
+        lhs.base == rhs.base && lhs.formulas == rhs.formulas
     }
 
     func buildSnapshots() -> [SelectionLayoutSnapshot] {
-        SelectionDocumentBuilder.makeSnapshots(from: base, geometry: geometry)
+        var snapshots = SelectionDocumentBuilder.makeSnapshots(from: base, geometry: geometry)
+        snapshots.append(contentsOf: SelectionDocumentBuilder.makeSnapshots(from: formulas, geometry: geometry))
+        return snapshots
     }
 
     func buildDocument() -> SelectionDocument {
@@ -35,6 +57,15 @@ enum SelectionDocumentBuilder {
                 base: $0.layout,
                 origin: geometry[$0.origin]
             )
+        }
+    }
+
+    static func makeSnapshots(
+        from formulas: [FormulaSelectionData],
+        geometry: GeometryProxy
+    ) -> [SelectionLayoutSnapshot] {
+        formulas.compactMap {
+            SelectionLayoutSnapshot(formula: $0, geometry: geometry)
         }
     }
 
@@ -58,17 +89,15 @@ enum SelectionDocumentBuilder {
             for line in layout.lines {
                 let sliceStart = slices.count
 
-                for run in line.runs {
-                    for slice in run.slices {
-                        slices.append(
-                            SelectionSlice(
-                                range: slice.characterRange.offsetBySelection(by: sectionStart),
-                                rect: slice.rect,
-                                lineIndex: lines.count,
-                                layoutDirection: run.layoutDirection
-                            )
+                for slice in line.slices {
+                    slices.append(
+                        SelectionSlice(
+                            range: slice.characterRange.offsetBySelection(by: sectionStart),
+                            rect: slice.rect,
+                            lineIndex: lines.count,
+                            layoutDirection: slice.layoutDirection
                         )
-                    }
+                    )
                 }
 
                 if sliceStart < slices.count {
@@ -94,19 +123,20 @@ enum SelectionDocumentBuilder {
         _ lhs: SelectionLayoutSnapshot,
         _ rhs: SelectionLayoutSnapshot
     ) -> Bool {
+        let overlapY = min(lhs.frame.maxY, rhs.frame.maxY) - max(lhs.frame.minY, rhs.frame.minY)
+        let minHeight = min(lhs.frame.height, rhs.frame.height)
+        
+        // If they overlap significantly vertically, they are on the same line
+        if overlapY > 0 && overlapY > minHeight * 0.3 {
+            return lhs.frame.minX < rhs.frame.minX
+        }
+        
+        // Otherwise, they are on different lines
         if lhs.frame.minY != rhs.frame.minY {
             return lhs.frame.minY < rhs.frame.minY
         }
-
-        if lhs.frame.minX != rhs.frame.minX {
-            return lhs.frame.minX < rhs.frame.minX
-        }
-
-        if lhs.frame.maxY != rhs.frame.maxY {
-            return lhs.frame.maxY < rhs.frame.maxY
-        }
-
-        return lhs.frame.maxX < rhs.frame.maxX
+        
+        return lhs.frame.minX < rhs.frame.minX
     }
 }
 
@@ -138,6 +168,20 @@ struct SelectionLayoutSnapshot {
             contents: contents,
             origin: origin
         )
+    }
+
+    init?(formula: FormulaSelectionData, geometry: GeometryProxy) {
+        let text = formula.latex
+        self.attributedString = NSAttributedString(string: text)
+        let rect = geometry[formula.bounds]
+        self.frame = rect
+        guard let key = SelectionLayoutSnapshotKey(text: text, frame: rect) else {
+            return nil
+        }
+        self.key = key
+        
+        let slice = SelectionSliceSnapshot(rect: rect, characterRange: 0..<text.count, layoutDirection: .leftToRight)
+        self.lines = [SelectionLineSnapshot(rect: rect, slices: [slice])]
     }
 
     private static func makeFrame(from base: SwiftUI.Text.Layout, origin: CGPoint) -> CGRect? {
@@ -237,7 +281,7 @@ struct SelectionLayoutSnapshotKey: Hashable {
 
 struct SelectionLineSnapshot {
     let rect: CGRect
-    let runs: [SelectionRunSnapshot]
+    let slices: [SelectionSliceSnapshot]
 
     init(
         base: SwiftUI.Text.Layout.Line,
@@ -247,68 +291,47 @@ struct SelectionLineSnapshot {
     ) {
         self.rect = base.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y)
 
-        let renderedRuns = base.compactMap {
-            SelectionRunSnapshot(base: $0, offset: offset, origin: origin)
-        }.filter { !$0.slices.isEmpty }
-
-        if !renderedRuns.isEmpty {
-            self.runs = renderedRuns
-            return
+        var allSlices = [SelectionSliceSnapshot]()
+        for run in base {
+            let layoutDir = run.layoutDirection
+            let renderedSlices = zip(run, run.selectionCharacterRanges).map { slice, characterRange in
+                SelectionSliceSnapshot(
+                    rect: slice.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y),
+                    characterRange: characterRange.offsetBySelection(by: offset),
+                    layoutDirection: layoutDir
+                )
+            }
+            if !renderedSlices.isEmpty {
+                allSlices.append(contentsOf: renderedSlices)
+            } else if let fallbackRange = run.selectionCharacterRange, !fallbackRange.isEmpty {
+                allSlices.append(SelectionSliceSnapshot(
+                    rect: run.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y),
+                    characterRange: fallbackRange.offsetBySelection(by: offset),
+                    layoutDirection: layoutDir
+                ))
+            }
         }
 
-        let fallbackLength = lineFragment?.attributedString.length ?? 0
-        guard fallbackLength > 0 else {
-            self.runs = []
-            return
-        }
-
-        self.runs = [
-            SelectionRunSnapshot(
-                layoutDirection: .leftToRight,
-                slices: [
+        if !allSlices.isEmpty {
+            self.slices = allSlices
+        } else {
+            let fallbackLength = lineFragment?.attributedString.length ?? 0
+            if fallbackLength > 0 {
+                self.slices = [
                     SelectionSliceSnapshot(
                         rect: rect,
-                        characterRange: offset..<(offset + fallbackLength)
+                        characterRange: offset..<(offset + fallbackLength),
+                        layoutDirection: .leftToRight
                     )
                 ]
-            )
-        ]
-    }
-}
-
-struct SelectionRunSnapshot {
-    let layoutDirection: LayoutDirection
-    let slices: [SelectionSliceSnapshot]
-
-    init(base: SwiftUI.Text.Layout.Run, offset: Int, origin: CGPoint) {
-        self.layoutDirection = base.layoutDirection
-
-        let renderedSlices = zip(base, base.selectionCharacterRanges).map { slice, characterRange in
-            SelectionSliceSnapshot(
-                rect: slice.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y),
-                characterRange: characterRange.offsetBySelection(by: offset)
-            )
-        }
-
-        if !renderedSlices.isEmpty {
-            self.slices = renderedSlices
-            return
-        }
-
-        if let fallbackRange = base.selectionCharacterRange, !fallbackRange.isEmpty {
-            self.slices = [
-                SelectionSliceSnapshot(
-                    rect: base.typographicBounds.rect.offsetBy(dx: origin.x, dy: origin.y),
-                    characterRange: fallbackRange.offsetBySelection(by: offset)
-                )
-            ]
-        } else {
-            self.slices = []
+            } else {
+                self.slices = []
+            }
         }
     }
 
-    init(layoutDirection: LayoutDirection, slices: [SelectionSliceSnapshot]) {
-        self.layoutDirection = layoutDirection
+    init(rect: CGRect, slices: [SelectionSliceSnapshot]) {
+        self.rect = rect
         self.slices = slices
     }
 }
@@ -316,6 +339,7 @@ struct SelectionRunSnapshot {
 struct SelectionSliceSnapshot {
     let rect: CGRect
     let characterRange: Range<Int>
+    let layoutDirection: LayoutDirection
 }
 
 private struct SelectionLayoutContents {

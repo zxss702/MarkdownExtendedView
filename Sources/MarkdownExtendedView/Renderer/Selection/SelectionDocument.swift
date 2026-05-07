@@ -295,7 +295,14 @@ struct SelectionDocument {
 
     private func closestSlice(to point: CGPoint) -> SelectionSlice? {
         slices.min {
-            $0.rect.distanceSquared(to: point) < $1.rect.distanceSquared(to: point)
+            let dx1 = $0.rect.horizontalDistance(to: point.x)
+            let dy1 = $0.rect.verticalDistance(to: point.y)
+            let dx2 = $1.rect.horizontalDistance(to: point.x)
+            let dy2 = $1.rect.verticalDistance(to: point.y)
+            
+            // Heavily penalize vertical distance so we snap to the horizontal line first.
+            // This prevents tall formulas from "stealing" clicks meant for smaller text on adjacent lines.
+            return (dy1 * 1000 + dx1) < (dy2 * 1000 + dx2)
         }
     }
 
@@ -352,7 +359,15 @@ struct SelectionDocument {
             return false
         }
 
-        return currentSection.frame.minY - previousSection.frame.maxY > 1
+        let overlapY = min(previousSection.frame.maxY, currentSection.frame.maxY) - max(previousSection.frame.minY, currentSection.frame.minY)
+        let minHeight = min(previousSection.frame.height, currentSection.frame.height)
+        
+        // If they overlap significantly vertically, they are on the same line
+        if overlapY > 0 && overlapY > minHeight * 0.3 {
+            return false
+        }
+
+        return true
     }
 }
 
@@ -481,11 +496,5 @@ private extension CGRect {
         if x < minX { return minX - x }
         if x > maxX { return x - maxX }
         return 0
-    }
-
-    func distanceSquared(to point: CGPoint) -> CGFloat {
-        let dx = horizontalDistance(to: point.x)
-        let dy = verticalDistance(to: point.y)
-        return dx * dx + dy * dy
     }
 }
