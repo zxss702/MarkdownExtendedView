@@ -238,53 +238,111 @@ struct MarkdownRenderer: View {
         let cellArrays = extractTableCells(from: table)
         let alignments = table.columnAlignments
         
-        HStack {
-            TableAdaptiveLayout {
-                Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-                    // Header row
-                    if !cellArrays.header.isEmpty {
-                        GridRow {
-                            renderGridCells(cellArrays.header, isHeader: true, alignments: alignments)
-                        }
-                    }
-
-                    // Body rows
-                    ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
-                        GridRow {
-                            renderGridCells(rowCells, isHeader: false, alignments: alignments)
-                        }
-                    }
+        Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+            // Header row
+            if !cellArrays.header.isEmpty {
+                GridRow {
+                    renderGridCells(cellArrays.header, isHeader: true, alignments: alignments)
                 }
-                .padding(.vertical, 8)
-                .selectionTextPassThrough()
+                // Horizontal line below header
+                if !cellArrays.body.isEmpty {
+                    renderHorizontalLine(above: cellArrays.body[0], alignments: alignments)
+                } else {
+                    renderSolidHorizontalLine(alignments: alignments)
+                }
+            }
+
+            // Body rows
+            ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
+                GridRow {
+                    renderGridCells(rowCells, isHeader: false, alignments: alignments)
+                }
+                // Horizontal line between rows
+                if rowIndex < cellArrays.body.count - 1 {
+                    renderHorizontalLine(above: cellArrays.body[rowIndex + 1], alignments: alignments)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .selectionTextPassThrough()
+    }
+
+    @ViewBuilder
+    private func renderSolidHorizontalLine(alignments: [Markdown.Table.ColumnAlignment?]) -> some View {
+        let totalCols = alignments.count
+        GridRow {
+            Color.primary.opacity(0.15).frame(height: 0.5)
+                .gridCellUnsizedAxes([.horizontal])
+                .gridCellColumns(max(1, totalCols * 2 - 1))
+        }
+    }
+
+    @ViewBuilder
+    private func renderHorizontalLine(above rowCells: [GridCell], alignments: [Markdown.Table.ColumnAlignment?]) -> some View {
+        GridRow {
+            // We can't mutate variables in a @ViewBuilder natively, so we must compute the segments first.
+            let segments = computeHorizontalSegments(rowCells: rowCells, totalCols: alignments.count)
+            ForEach(segments) { segment in
+                if segment.isClear {
+                    Color.clear.frame(height: 0.5)
+                        .gridCellUnsizedAxes([.horizontal])
+                        .gridCellColumns(segment.gridSpan)
+                } else {
+                    Color.primary.opacity(0.15).frame(height: 0.5)
+                        .gridCellUnsizedAxes([.horizontal])
+                        .gridCellColumns(segment.gridSpan)
+                }
+            }
+        }
+    }
+
+    private struct HorizontalSegment: Identifiable {
+        let id = UUID()
+        let isClear: Bool
+        let gridSpan: Int
+    }
+
+    private func computeHorizontalSegments(rowCells: [GridCell], totalCols: Int) -> [HorizontalSegment] {
+        var segments: [HorizontalSegment] = []
+        var currentVisualCol = 0
+        
+        for gridCell in rowCells {
+            let colIdx = gridCell.visualColumn
+            let displayColspan = max(1, Int(gridCell.node.colspan))
+            
+            if currentVisualCol < colIdx {
+                let missingCols = colIdx - currentVisualCol
+                segments.append(HorizontalSegment(isClear: false, gridSpan: missingCols * 2))
             }
             
-            Spacer(minLength: 0)
-        }
-    }
-
-    private struct TableAdaptiveLayout: Layout {
-        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-            guard let subview = subviews.first else { return .zero }
-            let idealSize = subview.sizeThatFits(.unspecified)
-            if let width = proposal.width, idealSize.width > width {
-                return subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            segments.append(HorizontalSegment(isClear: gridCell.node.rowspan == 0, gridSpan: displayColspan * 2 - 1))
+            
+            if colIdx + displayColspan < totalCols {
+                segments.append(HorizontalSegment(isClear: false, gridSpan: 1)) // Intersection
             }
-            return idealSize
+            
+            currentVisualCol = colIdx + displayColspan
         }
         
-        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-            guard let subview = subviews.first else { return }
-            let idealSize = subview.sizeThatFits(.unspecified)
-            let p: ProposedViewSize
-            if let width = proposal.width, idealSize.width > width {
-                p = ProposedViewSize(width: width, height: nil)
+        if currentVisualCol < totalCols {
+            let missingCols = totalCols - currentVisualCol
+            // The last missing column doesn't have a trailing intersection, so it's missingCols * 2 - 1, PLUS 1 for the intersection BEFORE it!
+            // Wait, if currentVisualCol < totalCols, there was an intersection BEFORE this missing block, which was ALREADY added by the previous cell!
+            // Actually, the previous cell added the intersection IF its colIdx + displayColspan < totalCols.
+            // So the previous cell DID add the intersection!
+            // So the remaining block just covers `missingCols * 2 - 1`.
+            // Wait, what if there were NO cells? (rowCells is empty)
+            if currentVisualCol == 0 {
+                segments.append(HorizontalSegment(isClear: false, gridSpan: totalCols * 2 - 1))
             } else {
-                p = ProposedViewSize(width: idealSize.width, height: nil)
+                segments.append(HorizontalSegment(isClear: false, gridSpan: missingCols * 2 - 1))
             }
-            subview.place(at: bounds.origin, proposal: p)
         }
+        
+        return segments
     }
+
+
 
     private struct GridCell {
         let node: Markdown.Table.Cell
@@ -346,7 +404,7 @@ struct MarkdownRenderer: View {
     
     @ViewBuilder
     private func renderGridCells(_ cells: [GridCell], isHeader: Bool, alignments: [Markdown.Table.ColumnAlignment?]) -> some View {
-        ForEach(Array(cells.enumerated()), id: \.offset) { _, gridCell in
+        ForEach(Array(cells.enumerated()), id: \.offset) { index, gridCell in
             let cell = gridCell.node
             let colIdx = gridCell.visualColumn
             let colAlignment = colIdx < alignments.count ? alignments[colIdx] : nil
@@ -355,10 +413,9 @@ struct MarkdownRenderer: View {
             let multilineAlign: TextAlignment = swiftUITextAlignment(for: colAlignment)
             let hAlign: HorizontalAlignment = horizontalAlignment(for: colAlignment)
             
-            // Only draw leading line if not the first visual column
-            let drawLeadingLine = colIdx > 0
+            let displayColspan = max(1, cell.colspan)
+            let finalColspan = displayColspan * 2 - 1
 
-            // swift-markdown emits rowspan: 0 for vertical filler cells
             if cell.rowspan > 0 {
                 renderInlineChildren(cell)
                     .font(theme.bodySwiftUIFont)
@@ -367,37 +424,19 @@ struct MarkdownRenderer: View {
                     .multilineTextAlignment(multilineAlign)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign)
-                    .overlay(
-                        ZStack {
-                            if !isHeader {
-                                Color.primary.opacity(0.15)
-                                    .frame(height: 0.5)
-                                    .frame(maxHeight: .infinity, alignment: .top)
-                            }
-                            if drawLeadingLine {
-                                Color.primary.opacity(0.15)
-                                    .frame(width: 0.5)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    )
+                    .frame(maxHeight: .infinity, alignment: frameAlign)
                     .gridColumnAlignment(hAlign)
-                    .gridCellColumns(Int(max(1, cell.colspan)))
+                    .gridCellColumns(Int(finalColspan))
             } else {
-                // Vertical filler (from rowspan). Omit top line to visually merge.
                 Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(
-                        ZStack {
-                            if drawLeadingLine {
-                                Color.primary.opacity(0.15)
-                                    .frame(width: 0.5)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    )
-                    .gridCellColumns(Int(max(1, cell.colspan)))
+                    .frame(width: 0, height: 0)
+                    .gridCellColumns(Int(finalColspan))
+            }
+            
+            // Render vertical line if not the last visual column
+            if colIdx + Int(displayColspan) < alignments.count {
+                Color.primary.opacity(0.15).frame(width: 0.5)
+                    .gridCellUnsizedAxes([.vertical])
             }
         }
     }
@@ -713,6 +752,8 @@ struct MarkdownRenderer: View {
     }
 
 }
+
+
 
 private struct BlockFormulaKey: LayoutValueKey {
     static let defaultValue: Bool = false
