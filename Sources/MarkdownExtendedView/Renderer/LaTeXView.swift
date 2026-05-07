@@ -53,7 +53,8 @@ struct LaTeXView: View {
     private var calculatedAscent: CGFloat {
         let fSize = isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize
         let displayList = MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fSize, isBlock: isBlock)
-        return displayList?.ascent ?? 0
+        // Add half of the inkPadding (which is 8, so 4) to shift the baseline down properly.
+        return (displayList?.ascent ?? 0) + 4
     }
 }
 
@@ -97,6 +98,9 @@ struct MathView: View {
     private var displayList: MTMathListDisplay? {
         MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fontSize, isBlock: labelMode == .display)
     }
+    
+    // Padding to prevent clipping of tall ink bounds (e.g., italic L, integrals)
+    private let inkPadding: CGFloat = 8
 
     var body: some View {
         if let displayList = displayList {
@@ -106,19 +110,17 @@ struct MathView: View {
                     
                     // SwiftUI Canvas coordinate system is Y-down (0,0 is top-left)
                     // CoreText expects Y-up (0,0 is bottom-left).
-                    // We flip the coordinate system.
                     cgContext.translateBy(x: 0, y: size.height)
                     cgContext.scaleBy(x: 1.0, y: -1.0)
                     
                     // MTDisplay is drawn with origin at the baseline.
-                    // Its bounds are: Y from -descent to +ascent.
-                    // By shifting up by `descent`, the bottom of the display rests at Y=0 (bottom of the Canvas).
-                    cgContext.translateBy(x: 0, y: displayList.descent)
+                    // By shifting up by `descent + inkPadding/2`, the bottom of the display rests at Y=0 (bottom of the Canvas).
+                    cgContext.translateBy(x: inkPadding/2, y: displayList.descent + inkPadding/2)
                     
                     displayList.draw(cgContext)
                 }
             }
-            .frame(width: displayList.width, height: displayList.ascent + displayList.descent)
+            .frame(width: displayList.width + inkPadding, height: displayList.ascent + displayList.descent + inkPadding)
             .anchorPreference(key: FormulaSelectionKey.self, value: .bounds) { bounds in
                 [FormulaSelectionData(latex: "$\(latex)$", bounds: bounds)]
             }
