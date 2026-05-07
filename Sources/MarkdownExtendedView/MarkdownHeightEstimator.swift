@@ -282,11 +282,11 @@ enum MarkdownHeightEstimator {
             measureText(
                 extractPlainText(from: cell),
                 font: theme.bodyFont,
-                maxWidth: width,
+                maxWidth: width * 0.95, // 5% safety buffer for bold/code fonts
                 lineSpacing: theme.paragraphSpacing
             )
         }
-        return ceil((heights.max() ?? theme.bodyFont.markdownLineHeight) + padding)
+        return ceil((heights.max() ?? theme.bodyFont.markdownLineHeight) + padding + 2) // +2pt extra safety margin
     }
 
     private static func flowItems(for element: any Markup, theme: MarkdownTheme, maxWidth: CGFloat) -> [FlowItem] {

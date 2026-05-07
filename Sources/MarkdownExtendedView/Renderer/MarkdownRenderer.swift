@@ -236,69 +236,151 @@ struct MarkdownRenderer: View {
     @ViewBuilder
     private func renderTable(_ table: Markdown.Table) -> some View {
         let cellArrays = extractTableCells(from: table)
-        VStack(spacing: 0) {
-            // Header row
-            if !cellArrays.header.isEmpty {
-                renderTableCellRow(cells: cellArrays.header, isHeader: true)
+        let alignments = table.columnAlignments
+        
+        HStack {
+            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                // Header row
+                if !cellArrays.header.isEmpty {
+                    GridRow {
+                        renderGridCells(cellArrays.header, isHeader: true, alignments: alignments)
+                    }
+                }
 
-                if !cellArrays.body.isEmpty {
-                    Rectangle()
-                        .fill(.secondary.opacity(0.3))
-                        .frame(height: 1)
-                        .allowsHitTesting(false)
+                // Body rows
+                ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
+                    GridRow {
+                        renderGridCells(rowCells, isHeader: false, alignments: alignments)
+                    }
                 }
             }
-
-            // Body rows
-            ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
-                renderTableCellRow(cells: rowCells, isHeader: false, rowIndex: rowIndex)
-
-                if rowIndex < cellArrays.body.count - 1 {
-                    Rectangle()
-                        .fill(.secondary.opacity(0.3))
-                        .frame(height: 1)
-                        .allowsHitTesting(false)
-                }
-            }
+            .fixedSize(horizontal: true, vertical: false) // Forces Grid to adapt to content width
+            .overlay(
+                Color.primary.opacity(0.15)
+                    .frame(height: 0.5)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            )
+            .padding(.vertical, 8)
+            .selectionTextPassThrough()
+            
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.secondary.opacity(0.3), lineWidth: 1)
-        )
-        .selectionTextPassThrough()
+    }
+
+    private struct GridCell {
+        let node: Markdown.Table.Cell
+        let visualColumn: Int
+    }
+
+    private func extractGridCells(from cells: [Markdown.Table.Cell]) -> [GridCell] {
+        var result = [GridCell]()
+        var skipCount = 0
+        var currentVisualColumn = 0
+        for cell in cells {
+            if skipCount > 0 {
+                skipCount -= 1
+                currentVisualColumn += 1
+                continue
+            }
+            result.append(GridCell(node: cell, visualColumn: currentVisualColumn))
+            if cell.colspan > 1 {
+                skipCount = Int(cell.colspan) - 1
+            }
+            currentVisualColumn += 1
+        }
+        return result
     }
 
     /// Extracts cells from a table into arrays for easier SwiftUI rendering.
-    private func extractTableCells(from table: Markdown.Table) -> (header: [Markdown.Table.Cell], body: [[Markdown.Table.Cell]]) {
-        let header: [Markdown.Table.Cell] = Array(table.head.cells)
-        let body: [[Markdown.Table.Cell]] = table.body.rows.map { Array($0.cells) }
+    private func extractTableCells(from table: Markdown.Table) -> (header: [GridCell], body: [[GridCell]]) {
+        let header = extractGridCells(from: Array(table.head.cells))
+        let body = Array(table.body.rows.map { extractGridCells(from: Array($0.cells)) })
         return (header, body)
+    }
+
+    private func horizontalAlignment(for alignment: Markdown.Table.ColumnAlignment?) -> HorizontalAlignment {
+        switch alignment {
+        case .left: return .leading
+        case .center: return .center
+        case .right: return .trailing
+        case .none, .some: return .leading
+        }
+    }
+
+    private func textAlignment(for alignment: Markdown.Table.ColumnAlignment?) -> Alignment {
+        switch alignment {
+        case .left: return .leading
+        case .center: return .center
+        case .right: return .trailing
+        case .none, .some: return .leading
+        }
+    }
+
+    private func swiftUITextAlignment(for alignment: Markdown.Table.ColumnAlignment?) -> TextAlignment {
+        switch alignment {
+        case .left: return .leading
+        case .center: return .center
+        case .right: return .trailing
+        case .none, .some: return .leading
+        }
     }
     
     @ViewBuilder
-    private func renderTableCellRow(cells: [Markdown.Table.Cell], isHeader: Bool, rowIndex: Int? = nil) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+    private func renderGridCells(_ cells: [GridCell], isHeader: Bool, alignments: [Markdown.Table.ColumnAlignment?]) -> some View {
+        ForEach(Array(cells.enumerated()), id: \.offset) { _, gridCell in
+            let cell = gridCell.node
+            let colIdx = gridCell.visualColumn
+            let colAlignment = colIdx < alignments.count ? alignments[colIdx] : nil
+            
+            let frameAlign: Alignment = textAlignment(for: colAlignment)
+            let multilineAlign: TextAlignment = swiftUITextAlignment(for: colAlignment)
+            let hAlign: HorizontalAlignment = horizontalAlignment(for: colAlignment)
+            
+            // Only draw leading line if not the first visual column
+            let drawLeadingLine = colIdx > 0
+
+            // swift-markdown emits rowspan: 0 for vertical filler cells
+            if cell.rowspan > 0 {
                 renderInlineChildren(cell)
                     .font(theme.bodySwiftUIFont)
                     .fontWeight(isHeader ? .semibold : nil)
                     .foregroundColor(theme.textColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, isHeader ? 10 : 9)
-
-                if index < cells.count - 1 {
-                    Rectangle()
-                        .fill(.secondary.opacity(0.3))
-                        .frame(width: 1)
-                        .allowsHitTesting(false)
-                }
+                    .multilineTextAlignment(multilineAlign)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign)
+                    .overlay(
+                        ZStack {
+                            if !isHeader {
+                                Color.primary.opacity(0.15)
+                                    .frame(height: 0.5)
+                                    .frame(maxHeight: .infinity, alignment: .top)
+                            }
+                            if drawLeadingLine {
+                                Color.primary.opacity(0.15)
+                                    .frame(width: 0.5)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    )
+                    .gridColumnAlignment(hAlign)
+                    .gridCellColumns(Int(max(1, cell.colspan)))
+            } else {
+                // Vertical filler (from rowspan). Omit top line to visually merge.
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(
+                        ZStack {
+                            if drawLeadingLine {
+                                Color.primary.opacity(0.15)
+                                    .frame(width: 0.5)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    )
+                    .gridCellColumns(Int(max(1, cell.colspan)))
             }
         }
-        .background(isHeader ? Color.secondary.opacity(0.2) : Color.clear)
     }
 
     // MARK: - Inline Rendering
