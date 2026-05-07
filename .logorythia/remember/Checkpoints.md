@@ -1,3 +1,28 @@
+## 2026-05-08 · MarkdownExtendedView 第七轮分块提交已推送（「再来」）
+
+**任务目标**：用户以「再来」触发第七轮分块提交并直接推送。
+
+**当前状态**：工作区再次清空，远端已同步。累计已达十六笔 commit。
+
+- `fix(layout)`：2 个文件（`MarkdownRenderer.swift`、`SelectableMarkdownRenderer.swift`）
+  - `MarkdownRenderer` 中提供 `TableAdaptiveLayout` 处理超宽表格避免内容被 `FixedSize` 硬截断
+  - LaTeXView Block 级公式新增 `BlockFormulaKey` 支持 FlowLayout 提供宽度占位避免溢出
+  - 修复 `SelectableMarkdownRenderer` 中多余的 content 背景视图叠层以避免拖字诀影响性能
+- `docs`：2 个文件（`.logorythia/remember/Checkpoints.md`、`.logorythia/remember/ProjectProfile.md`）
+  - 记录第六轮的分块内容及同步最新的并发梳理进度
+
+**已做变更**：修复表格列宽与大块公式折行布局问题，清理多余背景视图叠层，归档日志并推送。
+
+**下一步行动**：无，任务已彻底结束。
+
+**风险与未决事项**：无。
+
+**复现与验证路径**：
+- `git log --oneline -16` 可查看全部十六笔 commit
+- `git status` 确认工作区为空
+
+---
+
 # 任务进度与可恢复点
 
 ## 2026-05-08 · MarkdownExtendedView 第六轮分块提交已推送（「再来」）

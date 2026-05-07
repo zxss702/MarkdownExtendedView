@@ -6,7 +6,7 @@
 - `Sources/MarkdownExtendedView/`：主库源码。
   - `Configuration/`：功能配置（如 `Features.swift`）。
   - `Theme/`：主题系统（`Theme.swift`）。
-  - `Renderer/`：Markdown 渲染核心（`MarkdownRenderer.swift`、`LaTeXView.swift`）。
+  - `Renderer/`：Markdown 渲染核心（`MarkdownRenderer.swift`、`LaTeXView.swift`）。含 `TableAdaptiveLayout`（超宽表格自适应）与 `BlockFormulaKey`（Block 公式 FlowLayout 宽度占位）。
     - `Selection/`：文本/公式选中逻辑（`SelectableMarkdownRenderer.swift`、`SelectionDocument.swift`、`SelectionDocumentBuilder.swift`），支持 LaTeX 公式 `FormulaSelectionData` 锚点提取与选中 Snapshot 生成。
   - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。
   - `SwiftMath/`：内置数学排版引擎（原 `ExtendedSwiftMath` 外部依赖已移除并内嵌）。
@@ -20,3 +20,4 @@
 
 工程约束：
 - `SwiftMath` 为内置 fork，非外部包；并发安全正从 `NSLock` + `nonisolated(unsafe)` 逐步迁移至 `Mutex` + `@unchecked Sendable`（已覆盖 `MTFontV2.lazy mathTable`、`MTMathAtomFactory` 字典缓存、`RWLock` 底层），修改源码时需同步处理以避免 Swift 6 编译警告。
+- `SelectableMarkdownRenderer` 的 content 背景视图叠层需保持精简，多余叠层会显著拖慢文本拖选性能。
