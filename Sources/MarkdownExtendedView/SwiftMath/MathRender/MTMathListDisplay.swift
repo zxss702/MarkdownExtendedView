@@ -23,7 +23,7 @@ protocol DownShift {
 // MARK: - MTDisplay
 
 /// The base class for rendering a math equation.
-public class MTDisplay:NSObject {
+public class MTDisplay: NSObject, @unchecked Sendable {
     
     /// Draws itself in the given graphics context.
     public func draw(_ context:CGContext) {
