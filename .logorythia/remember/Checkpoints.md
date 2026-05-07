@@ -1,5 +1,30 @@
 # 任务进度与可恢复点
 
+## 2026-05-08 · MarkdownExtendedView 第六轮分块提交已推送（「再来」）
+
+**任务目标**：用户以「再来」触发第六轮分块提交并直接推送。
+
+**当前状态**：工作区再次清空，远端已同步。累计已达十四笔 commit。
+
+- `chore(deps)`：3 个文件（`MTFontV2.swift`、`MTMathAtomFactory.swift`、`RWLock.swift`）
+  - `MTFontV2` 中 lazy `mathTable` 改用 `Mutex` 替代 `NSLock`
+  - `MTMathAtomFactory` 的字典缓存由 `NSLock` 迁移至 `Mutex`，移除多余 `nonisolated(unsafe)`
+  - `RWLock` 底层改为 `Mutex` 且符合 `@unchecked Sendable`
+- `chore(log)`：1 个文件（`.logorythia/remember/Checkpoints.md`）
+  - 记录第五轮的分块内容
+
+**已做变更**：完成 SwiftMath 内部并发安全重构（Mutex 替代 NSLock），并推送。
+
+**下一步行动**：无，任务已彻底结束。
+
+**风险与未决事项**：无。
+
+**复现与验证路径**：
+- `git log --oneline -14` 可查看全部十四笔 commit
+- `git status` 确认工作区为空
+
+---
+
 ## 2026-05-08 · MarkdownExtendedView 第五轮分块提交已推送（「再来，同样」）
 
 **任务目标**：用户以「再来，同样」触发第五轮分块提交并直接推送。

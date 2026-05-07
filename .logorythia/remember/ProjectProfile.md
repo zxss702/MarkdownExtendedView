@@ -19,4 +19,4 @@
 关键配置入口：`Package.swift` 已移除 `ExtendedSwiftMath` 外部依赖，`SwiftMath` 以内置源码形式存在；`Features.swift` 曾用于特性开关，现已移除，默认全量启用。
 
 工程约束：
-- `SwiftMath` 为内置 fork，非外部包；修改其源码时需同步处理并发安全标注（`nonisolated(unsafe)`、`@unchecked Sendable`）以避免编译警告。
+- `SwiftMath` 为内置 fork，非外部包；并发安全正从 `NSLock` + `nonisolated(unsafe)` 逐步迁移至 `Mutex` + `@unchecked Sendable`（已覆盖 `MTFontV2.lazy mathTable`、`MTMathAtomFactory` 字典缓存、`RWLock` 底层），修改源码时需同步处理以避免 Swift 6 编译警告。
