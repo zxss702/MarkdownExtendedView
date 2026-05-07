@@ -1,27 +1,16 @@
 import Foundation
+import Synchronization
 
-final class RWLock {
-    init() {
-        pthread_rwlock_init(&lock, nil)
-    }
-
-    deinit {
-        pthread_rwlock_destroy(&lock)
-    }
+final class RWLock: @unchecked Sendable {
+    private let mutex = Mutex<Void>(())
 
     func read<T>(_ block: () -> T) -> T {
-        pthread_rwlock_rdlock(&lock)
-        defer { pthread_rwlock_unlock(&lock) }
-        return block()
+        mutex.withLock { _ in block() }
     }
 
     func readWrite<T>(_ block: () -> T) -> T {
-        pthread_rwlock_wrlock(&lock)
-        defer { pthread_rwlock_unlock(&lock) }
-        return block()
+        mutex.withLock { _ in block() }
     }
-
-    private var lock = pthread_rwlock_t()
 }
 
 @propertyWrapper

@@ -8,12 +8,15 @@
 import Foundation
 import CoreGraphics
 import CoreText
+import Synchronization
 
 extension MathFont {
     public func mtfont(size: CGFloat) -> MTFontV2 {
         MTFontV2(font: self, size: size)
     }
 }
+extension MTFontMathTableV2: @unchecked Sendable {}
+
 public final class MTFontV2: MTFont {
     let font: MathFont
     let size: CGFloat
@@ -44,18 +47,17 @@ public final class MTFontV2: MTFont {
         set { fatalError("\(#function): change to \(font.fontName) not allowed.") }
         get { _ctFont }
     }
-    private let mtfontV2LockOnMathTable = NSLock()
+    private let mathTableMutex = Mutex<MTFontMathTableV2?>(nil)
     override var mathTable: MTFontMathTable? {
         set { fatalError("\(#function): change to \(font.rawValue) not allowed.") }
         get {
-            guard _mathTab == nil else { return _mathTab }
-            //Note: lazy _mathTab initialization is now threadsafe.
-            mtfontV2LockOnMathTable.lock()
-            defer { mtfontV2LockOnMathTable.unlock() }
-            if _mathTab == nil {
-                _mathTab = MTFontMathTableV2(mathFont: font, size: size, unitsPerEm: unitsPerEm)
+            if let existing = mathTableMutex.withLock({ $0 }) { return existing }
+            let newTab = MTFontMathTableV2(mathFont: font, size: size, unitsPerEm: unitsPerEm)
+            return mathTableMutex.withLock { cache in
+                if let existing = cache { return existing }
+                cache = newTab
+                return newTab
             }
-            return _mathTab
         }
     }
     override var rawMathTable: NSDictionary? {

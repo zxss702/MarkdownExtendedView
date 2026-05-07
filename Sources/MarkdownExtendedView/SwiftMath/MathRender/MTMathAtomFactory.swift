@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Synchronization
 
 /** A factory to create commonly used MTMathAtoms. */
 public class MTMathAtomFactory {
@@ -70,31 +71,29 @@ public class MTMathAtomFactory {
         "rrbracket" : "\u{27E7}",  // right double bracket
     ]
     
-    private static let delimValueLock = NSLock()
-    nonisolated(unsafe) static var _delimValueToName = [String: String]()
+    private static let delimValueCache = Mutex<[String: String]?>(nil)
     public static var delimValueToName: [String: String] {
-        if _delimValueToName.isEmpty {
-            var output = [String: String]()
-            for (key, value) in Self.delimiters {
-                if let existingValue = output[value] {
-                    if key.count > existingValue.count {
+        if let existing = delimValueCache.withLock({ $0 }) {
+            return existing
+        }
+        var output = [String: String]()
+        for (key, value) in Self.delimiters {
+            if let existingValue = output[value] {
+                if key.count > existingValue.count {
+                    continue
+                } else if key.count == existingValue.count {
+                    if key.compare(existingValue) == .orderedDescending {
                         continue
-                    } else if key.count == existingValue.count {
-                        if key.compare(existingValue) == .orderedDescending {
-                            continue
-                        }
                     }
                 }
-                output[value] = key
             }
-            // protect lazily loading table in a multi-thread concurrent environment
-            delimValueLock.lock()
-            defer { delimValueLock.unlock() }
-            if _delimValueToName.isEmpty {
-                _delimValueToName = output
-            }
+            output[value] = key
         }
-        return _delimValueToName
+        return delimValueCache.withLock {
+            if let existing = $0 { return existing }
+            $0 = output
+            return output
+        }
     }
     
     public static let accents = [
@@ -115,32 +114,29 @@ public class MTMathAtomFactory {
         "overleftrightarrow" :  "\u{20E1}"  // Combining left right arrow above
     ]
     
-    private static let accentValueLock = NSLock()
-    nonisolated(unsafe) static var _accentValueToName: [String: String]? = nil
+    private static let accentValueCache = Mutex<[String: String]?>(nil)
     public static var accentValueToName: [String: String] {
-        if _accentValueToName == nil {
-            var output = [String: String]()
-
-            for (key, value) in Self.accents {
-                if let existingValue = output[value] {
-                    if key.count > existingValue.count {
+        if let existing = accentValueCache.withLock({ $0 }) {
+            return existing
+        }
+        var output = [String: String]()
+        for (key, value) in Self.accents {
+            if let existingValue = output[value] {
+                if key.count > existingValue.count {
+                    continue
+                } else if key.count == existingValue.count {
+                    if key.compare(existingValue) == .orderedDescending {
                         continue
-                    } else if key.count == existingValue.count {
-                        if key.compare(existingValue) == .orderedDescending {
-                            continue
-                        }
                     }
                 }
-                output[value] = key
             }
-            // protect lazily loading table in a multi-thread concurrent environment
-            accentValueLock.lock()
-            defer { accentValueLock.unlock() }
-            if _accentValueToName == nil {
-                _accentValueToName = output
-            }
+            output[value] = key
         }
-        return _accentValueToName!
+        return accentValueCache.withLock {
+            if let existing = $0 { return existing }
+            $0 = output
+            return output
+        }
     }
     
     static var supportedLatexSymbolNames:[String] {
@@ -595,44 +591,35 @@ public class MTMathAtomFactory {
 		"Œ": ("OE", ""),
 	]
     
-    private static let textToLatexLock = NSLock()
-    nonisolated(unsafe) static var _textToLatexSymbolName: [String: String]? = nil
+    private static let textToLatexCache = Mutex<[String: String]?>(nil)
     public static var textToLatexSymbolName: [String: String] {
-        get {
-            if self._textToLatexSymbolName == nil {
-                var output = [String: String]()
-                for (key, atom) in Self.supportedLatexSymbols {
-                    if atom.nucleus.count == 0 {
+        if let existing = textToLatexCache.withLock({ $0 }) {
+            return existing
+        }
+        var output = [String: String]()
+        for (key, atom) in Self.supportedLatexSymbols {
+            if atom.nucleus.count == 0 {
+                continue
+            }
+            if let existingText = output[atom.nucleus] {
+                // If there are 2 key for the same symbol, choose one deterministically.
+                if key.count > existingText.count {
+                    // Keep the shorter command
+                    continue
+                } else if key.count == existingText.count {
+                    // If the length is the same, keep the alphabetically first
+                    if key.compare(existingText) == .orderedDescending {
                         continue
                     }
-                    if let existingText = output[atom.nucleus] {
-                        // If there are 2 key for the same symbol, choose one deterministically.
-                        if key.count > existingText.count {
-                            // Keep the shorter command
-                            continue
-                        } else if key.count == existingText.count {
-                            // If the length is the same, keep the alphabetically first
-                            if key.compare(existingText) == .orderedDescending {
-                                continue
-                            }
-                        }
-                    }
-                    output[atom.nucleus] = key
-                }
-                // protect lazily loading table in a multi-thread concurrent environment
-                textToLatexLock.lock()
-                defer { textToLatexLock.unlock() }
-                if self._textToLatexSymbolName == nil {
-                    self._textToLatexSymbolName = output
                 }
             }
-            return self._textToLatexSymbolName!
+            output[atom.nucleus] = key
         }
-        // make textToLatexSymbolName readonly (allows internal load)
-        // entries can be lazily added with NSLock protection.
-        // set {
-        //     self._textToLatexSymbolName = newValue
-        // }
+        return textToLatexCache.withLock {
+            if let existing = $0 { return existing }
+            $0 = output
+            return output
+        }
     }
     
   //  public static let sharedInstance = MTMathAtomFactory()
@@ -841,13 +828,17 @@ public class MTMathAtomFactory {
      e.g. to define a symbol for "lcm" one can call:
      `MTMathAtomFactory.add(latexSymbol:"lcm", value:MTMathAtomFactory.operatorWithName("lcm", limits: false))` */
     public static func add(latexSymbol name: String, value: MTMathAtom) {
-        let _ = Self.textToLatexSymbolName
-        // above force textToLatexSymbolName to initialise first, _textToLatexSymbolName also initialized.
-        // protect lazily loading table in a multi-thread concurrent environment
-        textToLatexLock.lock()
-        defer { textToLatexLock.unlock() }
+        textToLatexCache.withLock { cache in
+            if var current = cache {
+                current[value.nucleus] = name
+                cache = current
+            } else {
+                var newCache = Self.textToLatexSymbolName
+                newCache[value.nucleus] = name
+                cache = newCache
+            }
+        }
         supportedLatexSymbols[name] = value
-        Self._textToLatexSymbolName?[value.nucleus] = name
     }
     
     /** Returns a large opertor for the given name. If limits is true, limits are set up on
