@@ -239,26 +239,50 @@ struct MarkdownRenderer: View {
         let alignments = table.columnAlignments
         
         HStack {
-            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-                // Header row
-                if !cellArrays.header.isEmpty {
-                    GridRow {
-                        renderGridCells(cellArrays.header, isHeader: true, alignments: alignments)
+            TableAdaptiveLayout {
+                Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                    // Header row
+                    if !cellArrays.header.isEmpty {
+                        GridRow {
+                            renderGridCells(cellArrays.header, isHeader: true, alignments: alignments)
+                        }
                     }
-                }
 
-                // Body rows
-                ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
-                    GridRow {
-                        renderGridCells(rowCells, isHeader: false, alignments: alignments)
+                    // Body rows
+                    ForEach(Array(cellArrays.body.enumerated()), id: \.offset) { rowIndex, rowCells in
+                        GridRow {
+                            renderGridCells(rowCells, isHeader: false, alignments: alignments)
+                        }
                     }
                 }
+                .padding(.vertical, 8)
+                .selectionTextPassThrough()
             }
-            .fixedSize(horizontal: true, vertical: false) // Forces Grid to adapt to content width
-            .padding(.vertical, 8)
-            .selectionTextPassThrough()
             
             Spacer(minLength: 0)
+        }
+    }
+
+    private struct TableAdaptiveLayout: Layout {
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            guard let subview = subviews.first else { return .zero }
+            let idealSize = subview.sizeThatFits(.unspecified)
+            if let width = proposal.width, idealSize.width > width {
+                return subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            }
+            return idealSize
+        }
+        
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            guard let subview = subviews.first else { return }
+            let idealSize = subview.sizeThatFits(.unspecified)
+            let p: ProposedViewSize
+            if let width = proposal.width, idealSize.width > width {
+                p = ProposedViewSize(width: width, height: nil)
+            } else {
+                p = ProposedViewSize(width: idealSize.width, height: nil)
+            }
+            subview.place(at: bounds.origin, proposal: p)
         }
     }
 
@@ -498,7 +522,12 @@ struct MarkdownRenderer: View {
             )
 
         case .latex(let latex, let isBlock):
-            LaTeXView(latex: latex, isBlock: isBlock, theme: theme)
+            if isBlock {
+                LaTeXView(latex: latex, isBlock: true, theme: theme)
+                    .layoutValue(key: BlockFormulaKey.self, value: true)
+            } else {
+                LaTeXView(latex: latex, isBlock: false, theme: theme)
+            }
 
         case .lineBreak:
             Color.clear
@@ -683,6 +712,10 @@ struct MarkdownRenderer: View {
         return result.foregroundColor(theme.textColor)
     }
 
+}
+
+private struct BlockFormulaKey: LayoutValueKey {
+    static let defaultValue: Bool = false
 }
 
 private struct CodeBlockContainerModifier: ViewModifier {
@@ -904,12 +937,16 @@ struct FlowLayout: Layout {
     }
 
     private func measuredSubview(for subview: LayoutSubview, maxWidth: CGFloat) -> MeasuredSubview {
+        let isBlockFormula = subview[BlockFormulaKey.self]
         let unspecifiedProposal = ProposedViewSize.unspecified
         let unspecifiedSize = subview.sizeThatFits(unspecifiedProposal)
 
         let measurementProposal: ProposedViewSize
         let size: CGSize
-        if maxWidth.isFinite, unspecifiedSize.width > maxWidth {
+        if isBlockFormula {
+            measurementProposal = ProposedViewSize(width: maxWidth, height: nil)
+            size = CGSize(width: maxWidth, height: subview.sizeThatFits(measurementProposal).height)
+        } else if maxWidth.isFinite, unspecifiedSize.width > maxWidth {
             measurementProposal = ProposedViewSize(width: maxWidth, height: nil)
             size = subview.sizeThatFits(measurementProposal)
         } else {

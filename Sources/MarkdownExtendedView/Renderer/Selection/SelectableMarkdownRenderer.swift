@@ -25,7 +25,7 @@ struct SelectableMarkdownRendererViewModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { textLayouts in
-                content.backgroundPreferenceValue(FormulaSelectionKey.self) { formulas in
+                Color.clear.backgroundPreferenceValue(FormulaSelectionKey.self) { formulas in
                     GeometryReader { geometry in
                         let input = SelectionLayoutInput(base: textLayouts, formulas: formulas, geometry: geometry)
 
