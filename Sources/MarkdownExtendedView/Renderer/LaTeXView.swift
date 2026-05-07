@@ -37,6 +37,9 @@ struct LaTeXView: View {
             .labelMode(isBlock ? .display : .text)
             .font(fontSize: isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
             .foregroundColor(textColor)
+            .alignmentGuide(.firstTextBaseline) { _ in
+                calculatedAscent
+            }
     }
 
     private var textColor: MTColor {
@@ -45,6 +48,18 @@ struct LaTeXView: View {
         #elseif os(macOS)
         return colorScheme == .dark ? .white : .black
         #endif
+    }
+
+    private var calculatedAscent: CGFloat {
+        var error: NSError?
+        guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error) else { return 0 }
+        let fSize = isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize
+        guard let font = MTFontManager.fontManager.defaultFont?.copy(withSize: fSize) else { return 0 }
+        let style: MTLineStyle = isBlock ? .display : .text
+        if let displayList = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: 0) {
+            return displayList.ascent
+        }
+        return 0
     }
 }
 
@@ -111,6 +126,12 @@ extension MathView: UIViewRepresentable {
         uiView.textAlignment = textAlignment
         uiView.labelMode = labelMode
     }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MTMathUILabel, context: Context) -> CGSize? {
+        // ALWAYS pass 0 width to disable MTMathUILabel's buggy internal line wrapping.
+        // This ensures the math formula stays on one line (or wraps cleanly as a single block in FlowLayout).
+        uiView.sizeThatFits(CGSize(width: 0, height: 0))
+    }
 }
 #elseif os(macOS)
 extension MathView: NSViewRepresentable {
@@ -132,6 +153,12 @@ extension MathView: NSViewRepresentable {
         nsView.textColor = textColor
         nsView.textAlignment = textAlignment
         nsView.labelMode = labelMode
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MTMathUILabel, context: Context) -> CGSize? {
+        // ALWAYS pass 0 width to disable MTMathUILabel's buggy internal line wrapping.
+        // This ensures the math formula stays on one line (or wraps cleanly as a single block in FlowLayout).
+        nsView.sizeThatFits(CGSize(width: 0, height: 0))
     }
 }
 #endif

@@ -93,13 +93,13 @@ enum MarkdownHeightEstimator {
         if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") {
             let latex = String(plainText.dropFirst(2).dropLast(2))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let formulaSize = await measureFormula(
+            let formulaData = await measureFormula(
                 latex,
                 fontSize: theme.latexBlockFontSize,
                 mode: .display,
                 maxWidth: width
             )
-            return ceil(max(formulaSize.height, theme.latexBlockFontSize) + 24)
+            return ceil(max(formulaData.size.height, theme.latexBlockFontSize) + 24)
         }
 
         if LaTeXPreprocessor.containsLaTeX(plainText) {
@@ -341,13 +341,13 @@ enum MarkdownHeightEstimator {
         case .text(let text):
             return textFlowItems(text, font: theme.bodyFont)
         case .latex(let latex, _):
-            let size = await measureFormula(
+            let formulaData = await measureFormula(
                 latex,
                 fontSize: theme.latexInlineFontSize,
                 mode: .text,
                 maxWidth: maxWidth
             )
-            return [.box(size: size)]
+            return [.box(size: formulaData.size, baseline: formulaData.ascent)]
         }
     }
 
@@ -420,17 +420,21 @@ enum MarkdownHeightEstimator {
         fontSize: CGFloat,
         mode: MTMathUILabelMode,
         maxWidth: CGFloat
-    ) -> CGSize {
-        let label = MTMathUILabelCache.shared
-        label.latex = latex
-        label.fontSize = fontSize
-        label.labelMode = mode
-        label.preferredMaxLayoutWidth = max(maxWidth, 1)
-        let size = label.sizeThatFits(CGSize(width: max(maxWidth, 1), height: .greatestFiniteMagnitude))
-        return CGSize(
-            width: ceil(max(size.width, 1)),
-            height: ceil(max(size.height, fontSize))
-        )
+    ) -> (size: CGSize, ascent: CGFloat) {
+        var error: NSError?
+        guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error) else {
+            return (CGSize(width: 1, height: fontSize), fontSize / 2)
+        }
+        guard let font = MTFontManager.fontManager.defaultFont?.copy(withSize: fontSize) else {
+            return (CGSize(width: 1, height: fontSize), fontSize / 2)
+        }
+        let style: MTLineStyle = mode == .display ? .display : .text
+        if let displayList = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: 0) {
+            let width = ceil(max(displayList.width, 1))
+            let height = ceil(max(displayList.ascent + displayList.descent, fontSize))
+            return (CGSize(width: width, height: height), ceil(displayList.ascent))
+        }
+        return (CGSize(width: 1, height: fontSize), fontSize / 2)
     }
 
     private static func measureText(
