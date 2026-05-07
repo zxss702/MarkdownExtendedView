@@ -1,5 +1,29 @@
 # 任务进度与可恢复点
 
+## 2026-05-08 · MarkdownExtendedView 第五轮分块提交已推送（「再来，同样」）
+
+**任务目标**：用户以「再来，同样」触发第五轮分块提交并直接推送。
+
+**当前状态**：工作区再次清空，远端已同步。累计已达十二笔 commit。
+
+- `style(view)`：2 个文件（`MarkdownRenderer.swift`、`CodeReferenceBlockView.swift`）
+  - 移除表格 Grid 外部在自适应宽度时的底边横线重叠
+  - `MCodeReferenceBlockView` 样式更改为 Capsule 防止两端过于生硬
+- `chore(log)`：1 个文件（`.logorythia/remember/Checkpoints.md`）
+  - 记录第四轮的分块内容
+
+**已做变更**：完成表格边框微调、代码引用视图样式优化及日志归档，并推送。
+
+**下一步行动**：无，任务已彻底结束。
+
+**风险与未决事项**：无。
+
+**复现与验证路径**：
+- `git log --oneline -12` 可查看全部十二笔 commit
+- `git status` 确认工作区为空
+
+---
+
 ## 2026-05-08 · MarkdownExtendedView 第四轮分块提交已推送（「再来」）
 
 **任务目标**：用户以「再来」触发第四轮分块提交并直接推送。
