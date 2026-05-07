@@ -37,8 +37,8 @@ struct MCodeReferenceBlockView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, verticalPadding)
             .background(theme.codeBackgroundColor.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .alignmentGuide(.firstTextBaseline) { _ in baseline }

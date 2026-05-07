@@ -255,11 +255,6 @@ struct MarkdownRenderer: View {
                 }
             }
             .fixedSize(horizontal: true, vertical: false) // Forces Grid to adapt to content width
-            .overlay(
-                Color.primary.opacity(0.15)
-                    .frame(height: 0.5)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-            )
             .padding(.vertical, 8)
             .selectionTextPassThrough()
             
