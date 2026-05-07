@@ -7,6 +7,7 @@
   - `Configuration/`：功能配置（如 `Features.swift`）。
   - `Theme/`：主题系统（`Theme.swift`）。
   - `Renderer/`：Markdown 渲染核心（`MarkdownRenderer.swift`、`LaTeXView.swift`）。
+    - `Selection/`：文本/公式选中逻辑（`SelectableMarkdownRenderer.swift`、`SelectionDocument.swift`、`SelectionDocumentBuilder.swift`），支持 LaTeX 公式 `FormulaSelectionData` 锚点提取与选中 Snapshot 生成。
   - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。
   - `SwiftMath/`：内置数学排版引擎（原 `ExtendedSwiftMath` 外部依赖已移除并内嵌）。
     - `MathBundle/`：字体资源与 bundling（`MathFont.swift`）。
