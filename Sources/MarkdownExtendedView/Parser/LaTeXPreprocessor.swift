@@ -87,7 +87,7 @@ nonisolated enum LaTeXPreprocessor {
     // MARK: - Types
 
     /// A segment of text that is either plain text or LaTeX.
-    enum Segment: Equatable {
+    enum Segment: Equatable, Sendable {
         /// Plain text content.
         case text(String)
         /// LaTeX content with flag for block (display) vs inline.
