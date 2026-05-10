@@ -13,17 +13,7 @@ import SwiftUI
 public struct MarkdownView: View, @MainActor Equatable {
     private static let synchronousParseCharacterLimit = 4096
 
-    public static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
-        lhs.content == rhs.content && lhs.baseURL == rhs.baseURL
-    }
-
-    private let content: String
-    private let baseURL: URL?
-
-    @Environment(\.markdownTheme) private var theme
-    @State private var snapshot: MarkdownRenderSnapshot
-    @State private var measuredWidth: CGFloat = 0
-    @State private var helper = ViewHelper()
+    // MARK: - Initialization
 
     public init(_ content: String, baseURL: URL? = nil) {
         self.content = content
@@ -31,29 +21,36 @@ public struct MarkdownView: View, @MainActor Equatable {
         let initialSnapshot = content.count > Self.synchronousParseCharacterLimit
             ? MarkdownRenderSnapshot.empty
             : MarkdownRenderSnapshot.parse(content)
-        _snapshot = State(initialValue: initialSnapshot)
+        self._snapshot = State(initialValue: initialSnapshot)
     }
 
-    public init(content: String, baseURL: URL? = nil) {
-        self.init(content, baseURL: baseURL)
+    // MARK: - Stored Properties
+
+    private let content: String
+    private let baseURL: URL?
+
+    // MARK: - State
+
+    @Environment(\.markdownTheme) private var theme
+    @State private var snapshot: MarkdownRenderSnapshot
+    @State private var helper = ViewHelper()
+
+    // MARK: - Equatable
+
+    public static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
+        lhs.content == rhs.content && lhs.baseURL == rhs.baseURL
     }
+
+    // MARK: - Body
 
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
             .lineLimit(nil)
-//            .frame(maxWidth: .infinity, alignment: .topLeading)
-//            .fixedSize(horizontal: false, vertical: true)
-            .frame(height: snapshot.estimatedHeight, alignment: .top)
-            .background(widthReader)
 #if os(macOS) || os(iOS)
             .selectable()
 #endif
-            .onPreferenceChange(MarkdownViewWidthPreferenceKey.self, perform: updateMeasuredWidth(_:))
             .onChange(of: content) { _, newValue in
                 scheduleSnapshotUpdate(for: newValue, debounce: true)
-            }
-            .onChange(of: theme.layoutSignature) { _, _ in
-                refreshLayoutSnapshot()
             }
             .onDisappear {
                 helper.updateTask?.cancel()
@@ -61,25 +58,7 @@ public struct MarkdownView: View, @MainActor Equatable {
             }
     }
 
-    private var widthReader: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: MarkdownViewWidthPreferenceKey.self,
-                value: proxy.size.width
-            )
-        }
-    }
-
-    private func updateMeasuredWidth(_ width: CGFloat) {
-        let roundedWidth = MarkdownRenderSnapshot.roundedWidth(width)
-        guard abs(measuredWidth - roundedWidth) > 0.5 else { return }
-        measuredWidth = roundedWidth
-        refreshLayoutSnapshot()
-    }
-
-    private func refreshLayoutSnapshot() {
-        scheduleSnapshotUpdate(for: content, debounce: false)
-    }
+    // MARK: - Snapshot Updates
 
     private func scheduleSnapshotUpdate(for content: String, debounce: Bool) {
         let now = Date()
@@ -87,8 +66,6 @@ public struct MarkdownView: View, @MainActor Equatable {
         let delay: TimeInterval = debounce ? max(0, 0.1 - timeSinceLastUpdate) : 0
 
         helper.updateTask?.cancel()
-        let width = measuredWidth
-        let theme = theme
         let animate = helper.hasAppeared
         let previousBlocks = snapshot.blocks
 
@@ -102,12 +79,7 @@ public struct MarkdownView: View, @MainActor Equatable {
             }
 
             guard !Task.isCancelled else { return }
-            let nextSnapshot: MarkdownRenderSnapshot
-            if width > 0 {
-                nextSnapshot = await MarkdownRenderSnapshot.parse(content, width: width, theme: theme, previousBlocks: previousBlocks)
-            } else {
-                nextSnapshot = await MarkdownRenderSnapshot.parse(content, previousBlocks: previousBlocks)
-            }
+            let nextSnapshot = await MarkdownRenderSnapshot.parse(content, previousBlocks: previousBlocks)
 
             await MainActor.run {
                 guard !Task.isCancelled else { return }
@@ -123,14 +95,6 @@ public struct MarkdownView: View, @MainActor Equatable {
                 helper.updateTask = nil
             }
         }
-    }
-}
-
-private struct MarkdownViewWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
