@@ -109,7 +109,8 @@ struct MarkdownRenderer: View {
                 HighlightedCodeView(
                     code: codeBlock.code,
                     language: codeBlock.language,
-                    theme: theme
+                    theme: theme,
+                    highlightedLines: snapshot.codeHighlights[ObjectIdentifier(codeBlock as AnyObject)]
                 )
             } else {
                 Text(codeBlock.code.trimmingCharacters(in: .newlines))
@@ -448,59 +449,26 @@ struct MarkdownRenderer: View {
         buildInlineText(from: parent)
     }
 
-    /// Builds a Text view from inline children, handling LaTeX segments and links.
+    /// Builds a Text view from inline children, using precomputed feature flags.
     private func buildInlineText(from parent: any Markup) -> AnyView {
-        let plainText = extractPlainText(from: parent)
+        let features = snapshot.featuresMap[ObjectIdentifier(parent as AnyObject)] ?? []
 
-        // Check if text contains LaTeX
-        if LaTeXPreprocessor.containsLaTeX(plainText) {
+        if features.contains(.hasLaTeX) {
             return AnyView(renderTextWithLaTeX(parent))
         }
-
-        if containsInlineMCodeReferences(parent) {
+        if features.contains(.hasMCodeReferences) {
             return AnyView(renderTextWithLinks(parent))
         }
-
-        if containsLinks(parent) {
+        if features.contains(.hasLinks) {
             return AnyView(renderTextWithLinks(parent))
         }
-
-        if containsImages(parent) {
+        if features.contains(.hasImages) {
             return AnyView(renderTextWithImages(parent))
         }
-
         return AnyView(buildAttributedText(from: parent).selectionTextPassThrough())
     }
 
-    /// Checks if the markup contains any Link nodes.
-    private func containsLinks(_ parent: any Markup) -> Bool {
-        for child in parent.children {
-            if child is Markdown.Link { return true }
-            if containsLinks(child) { return true }
-        }
-        return false
-    }
 
-    private func containsInlineMCodeReferences(_ parent: any Markup) -> Bool {
-        for child in parent.children {
-            if let code = child as? InlineCode, parseMCodeReferences(from: code.code)?.isEmpty == false {
-                return true
-            }
-            if containsInlineMCodeReferences(child) { return true }
-        }
-        return false
-    }
-
-    /// Checks if the markup contains any Image nodes.
-    private func containsImages(_ parent: any Markup) -> Bool {
-        for child in parent.children {
-            if child is Markdown.Image { return true }
-            if containsImages(child) { return true }
-        }
-        return false
-    }
-
-    /// Renders text with images using flow layout.
     @ViewBuilder
     private func renderTextWithImages(_ parent: any Markup) -> some View {
         FlowLayout(
@@ -575,17 +543,25 @@ struct MarkdownRenderer: View {
         }
     }
 
-    /// Renders text that may contain inline LaTeX.
+    /// Renders text that may contain inline LaTeX, using cached segments when available.
+    /// Renders text that may contain inline LaTeX, using cached segments when available.
     @ViewBuilder
     private func renderTextWithLaTeX(_ parent: any Markup) -> some View {
-        let plainText = extractPlainText(from: parent)
+        let oid = ObjectIdentifier(parent as AnyObject)
+        let segments: [LaTeXPreprocessor.Segment] = {
+            if let cached = snapshot.latexSegments[oid] {
+                return cached
+            }
+            let plainText = extractPlainText(from: parent)
+            return LaTeXPreprocessor.extractSegments(from: plainText)
+        }()
 
         FlowLayout(
             spacing: 0,
             lineSpacing: theme.paragraphSpacing,
             minimumLineHeight: theme.bodyFont.markdownLineHeight
         ) {
-            let elements = flowInlineElements(from: LaTeXPreprocessor.extractSegments(from: plainText))
+            let elements = flowInlineElements(from: segments)
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
                 renderInlineFlowElement(element)
             }

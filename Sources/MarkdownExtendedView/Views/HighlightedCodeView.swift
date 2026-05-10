@@ -15,22 +15,29 @@ public struct HighlightedCodeView: View {
     private let theme: MarkdownTheme
     @State private var lines: [[Token]]
 
-    public init(code: String, language: String?, theme: MarkdownTheme) {
+    public init(code: String, language: String?, theme: MarkdownTheme, highlightedLines: [[Token]]? = nil) {
         self.theme = theme
 
-        let normalizedCode = code.trimmingCharacters(in: .newlines)
-        let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
-        let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines
-        let resolvedLines = cachedLines ?? Self.makeHighlightedLines(
-            code: normalizedCode,
-            language: language
-        )
-
-        if cachedLines == nil {
-            HighlightedCodeSnapshotCache.shared.setObject(
-                HighlightedCodeSnapshot(lines: resolvedLines),
-                forKey: cacheKey as NSString
+        let resolvedLines: [[Token]]
+        if let highlightedLines {
+            resolvedLines = highlightedLines
+        } else {
+            let normalizedCode = code.trimmingCharacters(in: .newlines)
+            let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
+            let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines
+            let computedLines = cachedLines ?? Self.makeHighlightedLines(
+                code: normalizedCode,
+                language: language
             )
+
+            if cachedLines == nil {
+                HighlightedCodeSnapshotCache.shared.setObject(
+                    HighlightedCodeSnapshot(lines: computedLines),
+                    forKey: cacheKey as NSString
+                )
+            }
+
+            resolvedLines = computedLines
         }
 
         _lines = State(initialValue: resolvedLines)
@@ -86,27 +93,30 @@ public struct HighlightedCodeView: View {
         return splitIntoLines(tokens)
     }
 
-    private static func cacheKey(for code: String, language: String?) -> String {
-        "\(language ?? "plain")::\(code)"
+    static func cacheKey(for code: String, language: String?) -> String {
+        var hasher = Hasher()
+        hasher.combine(code)
+        let codeHash = hasher.finalize()
+        return "\(language ?? "plain")::\(codeHash)"
     }
 
     /// Splits tokens into lines, preserving token structure.
-    private static func splitIntoLines(_ tokens: [Token]) -> [[Token]] {
-        var lines: [[Token]] = [[]]
+    nonisolated static func splitIntoLines(_ tokens: [Token]) -> [[Token]] {
+            var lines: [[Token]] = [[]]
 
-        for token in tokens {
-            let parts = token.text.components(separatedBy: "\n")
-            for (index, part) in parts.enumerated() {
-                if index > 0 {
-                    lines.append([])
-                }
-                if !part.isEmpty {
-                    lines[lines.count - 1].append(Token(text: part, type: token.type))
+            for token in tokens {
+                let parts = token.text.components(separatedBy: "\n")
+                for (index, part) in parts.enumerated() {
+                    if index > 0 {
+                        lines.append([])
+                    }
+                    if !part.isEmpty {
+                        lines[lines.count - 1].append(Token(text: part, type: token.type))
+                    }
                 }
             }
-        }
 
-        return lines
+            return lines
     }
 }
 
