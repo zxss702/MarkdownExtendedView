@@ -1,3 +1,29 @@
+## 2026-05-08 · MarkdownExtendedView 第八轮分块提交已推送（「再来」）
+
+**任务目标**：用户以「再来」触发第八轮分块提交并直接推送。
+
+**当前状态**：工作区再次清空，远端已同步。累计已达二十笔 commit。
+
+- `fix(layout)`：2 个文件（`MarkdownRenderer.swift`、`LaTeXView.swift`）
+  - `MarkdownRenderer` 中的 `TableAdaptiveLayout` 优化处理了水平与垂直交叉场景的网格渲染，确保包含 `colspan` 时的分割线能正确接合
+  - `LaTeXView` 中的 `MathView` 对 `ascent` 与 `descent` 增加 `inkPadding`，防止长积分号或斜体字母在高低边缘被裁剪
+- `perf(selection)`：1 个文件（`SelectableMarkdownRenderer.swift`）
+  - 通过状态分离与 `.background` 几何视图获取，消除在 `backgroundPreferenceValue` 回调中再次堆叠子级的问题
+- `chore(log)`：4 个文件（`.logorythia/remember/Checkpoints.md`、`.logorythia/remember/ProjectProfile.md`、`.logorythia/remember/DecisionLog.md`、`.logorythia/remember/EpisodicNotes.md`）
+  - 记录第七轮和第八轮合并进度的说明及决定
+
+**已做变更**：修复表格交叉分割线接合、Block 公式边缘裁剪、重构 PreferenceKey 归并点消除叠层，归档日志并推送。
+
+**下一步行动**：无，任务已彻底结束。
+
+**风险与未决事项**：无。
+
+**复现与验证路径**：
+- `git log --oneline -20` 可查看全部二十笔 commit
+- `git status` 确认工作区为空
+
+---
+
 ## 2026-05-08 · MarkdownExtendedView 第七轮分块提交已推送（「再来」）
 
 **任务目标**：用户以「再来」触发第七轮分块提交并直接推送。

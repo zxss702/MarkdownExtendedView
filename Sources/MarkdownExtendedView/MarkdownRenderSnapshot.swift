@@ -12,19 +12,17 @@ struct MarkdownBlockFeatures: OptionSet, Sendable {
 
 struct MarkdownRenderSnapshot: Sendable {
     let blocks: [MarkdownBlockNode]
-    let codeHighlights: [ObjectIdentifier: [[Token]]]
-    let latexSegments: [ObjectIdentifier: [LaTeXPreprocessor.Segment]]
-    let featuresMap: [ObjectIdentifier: MarkdownBlockFeatures]
+    let codeHighlights: [UUID: [[Token]]]
 
-    static let empty = MarkdownRenderSnapshot(blocks: [], codeHighlights: [:], latexSegments: [:], featuresMap: [:])
+    static let empty = MarkdownRenderSnapshot(blocks: [], codeHighlights: [:])
 
     // MARK: - Async parse
 
     static func parse(_ content: String, previousBlocks: [MarkdownBlockNode] = []) async -> Self {
         let children = await parsedChildren(for: content)
-        let (blocks, featuresMap, latexSegments) = buildBlockNodes(children: children, reusingFrom: previousBlocks)
+        let blocks = buildBlockNodes(children: children, reusingFrom: previousBlocks)
         let codeHighlights = await precomputeCodeHighlights(blocks: blocks)
-        return MarkdownRenderSnapshot(blocks: blocks, codeHighlights: codeHighlights, latexSegments: latexSegments, featuresMap: featuresMap)
+        return MarkdownRenderSnapshot(blocks: blocks, codeHighlights: codeHighlights)
     }
 
     // MARK: - Async parse (compatibility — width/theme no longer used)
@@ -43,8 +41,8 @@ struct MarkdownRenderSnapshot: Sendable {
     @MainActor
     static func parse(_ content: String, previousBlocks: [MarkdownBlockNode] = []) -> Self {
         let children = parsedChildrenSync(for: content)
-        let (blocks, featuresMap, latexSegments) = buildBlockNodes(children: children, reusingFrom: previousBlocks)
-        return MarkdownRenderSnapshot(blocks: blocks, codeHighlights: [:], latexSegments: latexSegments, featuresMap: featuresMap)
+        let blocks = buildBlockNodes(children: children, reusingFrom: previousBlocks)
+        return MarkdownRenderSnapshot(blocks: blocks, codeHighlights: [:])
     }
 
     // MARK: - Block node building with feature extraction
@@ -52,10 +50,7 @@ struct MarkdownRenderSnapshot: Sendable {
     private static func buildBlockNodes(
         children: [any Markup],
         reusingFrom previous: [MarkdownBlockNode]
-    ) -> (blocks: [MarkdownBlockNode], featuresMap: [ObjectIdentifier: MarkdownBlockFeatures], latexSegments: [ObjectIdentifier: [LaTeXPreprocessor.Segment]]) {
-        var featuresMap: [ObjectIdentifier: MarkdownBlockFeatures] = [:]
-        var latexSegments: [ObjectIdentifier: [LaTeXPreprocessor.Segment]] = [:]
-
+    ) -> [MarkdownBlockNode] {
         let blocks = children.enumerated().map { index, child in
             let kind = String(describing: type(of: child))
             let id: UUID
@@ -64,22 +59,16 @@ struct MarkdownRenderSnapshot: Sendable {
             } else {
                 id = UUID()
             }
-            let features = computeFeaturesRecursively(child, featuresMap: &featuresMap, latexSegments: &latexSegments)
+            let features = computeFeaturesRecursively(child)
             return MarkdownBlockNode(id: id, kind: kind, markup: child, features: features)
         }
-
-        return (blocks, featuresMap, latexSegments)
+        return blocks
     }
 
     /// Recursively computes feature flags for a markup node and all descendants.
     @discardableResult
-    private static func computeFeaturesRecursively(
-        _ markup: any Markup,
-        featuresMap: inout [ObjectIdentifier: MarkdownBlockFeatures],
-        latexSegments: inout [ObjectIdentifier: [LaTeXPreprocessor.Segment]]
-    ) -> MarkdownBlockFeatures {
+    private static func computeFeaturesRecursively(_ markup: any Markup) -> MarkdownBlockFeatures {
         var features: MarkdownBlockFeatures = []
-        let oid = ObjectIdentifier(markup as AnyObject)
 
         if markup is Markdown.Link {
             features.insert(.hasLinks)
@@ -91,36 +80,34 @@ struct MarkdownRenderSnapshot: Sendable {
             features.insert(.hasMCodeReferences)
         }
         if let plainTextConvertible = markup as? (any PlainTextConvertibleMarkup) {
-            let text = plainTextConvertible.plainText
-            if LaTeXPreprocessor.containsLaTeX(text) {
+            if LaTeXPreprocessor.containsLaTeX(plainTextConvertible.plainText) {
                 features.insert(.hasLaTeX)
-                latexSegments[oid] = LaTeXPreprocessor.extractSegments(from: text)
             }
         }
 
         for child in markup.children {
-            let childFeatures = computeFeaturesRecursively(child, featuresMap: &featuresMap, latexSegments: &latexSegments)
+            let childFeatures = computeFeaturesRecursively(child)
             features.formUnion(childFeatures)
         }
 
-        featuresMap[oid] = features
         return features
     }
 
     // MARK: - Code highlighting precomputation
 
-    private static func precomputeCodeHighlights(blocks: [MarkdownBlockNode]) async -> [ObjectIdentifier: [[Token]]] {
-        await withTaskGroup(of: (ObjectIdentifier, [[Token]]).self) { group in
+    private static func precomputeCodeHighlights(blocks: [MarkdownBlockNode]) async -> [UUID: [[Token]]] {
+        await withTaskGroup(of: (UUID, [[Token]]).self) { group in
             for block in blocks {
                 if let codeBlock = block.markup as? CodeBlock, codeBlock.language != "mermaid" {
+                    let blockID = block.id
                     group.addTask {
                         let tokens = SyntaxHighlighter().tokenize(codeBlock.code, language: codeBlock.language)
                         let lines = HighlightedCodeView.splitIntoLines(tokens)
-                        return (ObjectIdentifier(codeBlock as AnyObject), lines)
+                        return (blockID, lines)
                     }
                 }
             }
-            var result: [ObjectIdentifier: [[Token]]] = [:]
+            var result: [UUID: [[Token]]] = [:]
             for await (id, lines) in group {
                 result[id] = lines
             }

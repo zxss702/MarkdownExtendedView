@@ -20,4 +20,9 @@
 
 工程约束：
 - `SwiftMath` 为内置 fork，非外部包；并发安全正从 `NSLock` + `nonisolated(unsafe)` 逐步迁移至 `Mutex` + `@unchecked Sendable`（已覆盖 `MTFontV2.lazy mathTable`、`MTMathAtomFactory` 字典缓存、`RWLock` 底层），修改源码时需同步处理以避免 Swift 6 编译警告。
-- `SelectableMarkdownRenderer` 的 content 背景视图叠层需保持精简，多余叠层会显著拖慢文本拖选性能。
+- `SelectableMarkdownRenderer` 的 content 背景视图叠层需保持精简，多余叠层会显著拖慢文本拖选性能。已重构 PreferenceKey 归并点：状态分离后通过 `.background` 几何视图预收集数据，避免在 `backgroundPreferenceValue` 回调中再次堆叠子级。
+- **渲染管线中禁用 `ObjectIdentifier(markup as AnyObject)` 做字典 key**：`any Markup` 协议存在体的 ObjectIdentifier 不稳定——不同类实例（Paragraph、Image、Text 等）可能返回同一个假值，与 `MarkdownBlockNode.markup` 的 ObjectIdentifier 也不同。所有特征/缓存信息通过渲染管线显式传递，而非基于 ObjectIdentifier 的字典查找。
+  - `MarkdownBlockFeatures`（特征掩码）由 `MarkdownBlockNode.features` 直接持有，渲染时沿 `renderBlock` → `renderParagraph/renderHeading` → `renderInlineChildren` → `buildInlineText` 管线传递。
+  - `codeHighlights`（语法高亮令牌）key 类型已从 `ObjectIdentifier` 改为 `UUID`（即 `MarkdownBlockNode.id`），通过渲染管线传递。
+  - `latexSegments`（LaTeX 段缓存）已移除 ObjectIdentifier 查找，仅保留内联计算（本有 fallback）。
+  - 对 blockquote/list 内嵌套的非顶层 block，使用 `computeInlineFeatures` helper 在渲染时局部计算特征掩码。

@@ -20,7 +20,7 @@ struct MarkdownRenderer: View {
     var body: some View {
         VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
             ForEach(snapshot.blocks) { block in
-                renderBlock(block.markup)
+                renderBlock(block.markup, features: block.features, highlightedLines: snapshot.codeHighlights[block.id])
                     .transition(.markdownBlockAppear)
             }
         }
@@ -29,13 +29,13 @@ struct MarkdownRenderer: View {
 
     // MARK: - Block Rendering
 
-    private func renderBlock(_ markup: any Markup) -> AnyView {
+    private func renderBlock(_ markup: any Markup, features: MarkdownBlockFeatures = [], highlightedLines: [[Token]]? = nil) -> AnyView {
         if let heading = markup as? Heading {
-            return AnyView(renderHeading(heading))
+            return AnyView(renderHeading(heading, features: features))
         } else if let paragraph = markup as? Paragraph {
-            return AnyView(renderParagraph(paragraph))
+            return AnyView(renderParagraph(paragraph, features: features))
         } else if let codeBlock = markup as? CodeBlock {
-            return AnyView(renderCodeBlock(codeBlock))
+            return AnyView(renderCodeBlock(codeBlock, highlightedLines: highlightedLines))
         } else if let blockQuote = markup as? BlockQuote {
             return AnyView(renderBlockQuote(blockQuote))
         } else if let orderedList = markup as? OrderedList {
@@ -61,8 +61,8 @@ struct MarkdownRenderer: View {
     // MARK: - Heading
 
     @ViewBuilder
-    private func renderHeading(_ heading: Heading) -> some View {
-        renderInlineChildren(heading)
+    private func renderHeading(_ heading: Heading, features: MarkdownBlockFeatures) -> some View {
+        renderInlineChildren(heading, features: features)
             .font(theme.headingSwiftUIFont(level: heading.level))
             .foregroundColor(theme.textColor)
             .contentTransition(.numericText())
@@ -73,13 +73,13 @@ struct MarkdownRenderer: View {
     // MARK: - Paragraph
 
     @ViewBuilder
-    private func renderParagraph(_ paragraph: Paragraph) -> some View {
+    private func renderParagraph(_ paragraph: Paragraph, features: MarkdownBlockFeatures) -> some View {
         let plainText = paragraph.plainText
         if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") {
             let latex = String(plainText.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
             LaTeXView(latex: latex, isBlock: true, theme: theme)
         } else {
-            renderInlineChildren(paragraph)
+            renderInlineChildren(paragraph, features: features)
                 .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .contentTransition(.numericText())
@@ -89,11 +89,11 @@ struct MarkdownRenderer: View {
     // MARK: - Code Block
 
     @ViewBuilder
-    private func renderCodeBlock(_ codeBlock: CodeBlock) -> some View {
+    private func renderCodeBlock(_ codeBlock: CodeBlock, highlightedLines: [[Token]]? = nil) -> some View {
         if codeBlock.language == "mermaid" {
             renderMermaidBlock(codeBlock)
         } else {
-            renderRegularCodeBlock(codeBlock)
+            renderRegularCodeBlock(codeBlock, highlightedLines: highlightedLines)
         }
     }
 
@@ -103,14 +103,14 @@ struct MarkdownRenderer: View {
     }
 
     @ViewBuilder
-    private func renderRegularCodeBlock(_ codeBlock: CodeBlock) -> some View {
+    private func renderRegularCodeBlock(_ codeBlock: CodeBlock, highlightedLines: [[Token]]? = nil) -> some View {
         Group {
             if codeBlock.language != nil {
                 HighlightedCodeView(
                     code: codeBlock.code,
                     language: codeBlock.language,
                     theme: theme,
-                    highlightedLines: snapshot.codeHighlights[ObjectIdentifier(codeBlock as AnyObject)]
+                    highlightedLines: highlightedLines
                 )
             } else {
                 Text(codeBlock.code.trimmingCharacters(in: .newlines))
@@ -146,7 +146,7 @@ struct MarkdownRenderer: View {
 
             VStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
                 ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
-                    renderBlock(child)
+                    renderBlock(child, features: computeInlineFeatures(child))
                 }
             }
             .padding(.leading, 12)
@@ -222,13 +222,14 @@ struct MarkdownRenderer: View {
     }
 
     /// Renders a child block within a list item, handling nested lists specially.
+    /// Renders a child block within a list item, handling nested lists specially.
     private func renderListChildBlock(_ markup: any Markup, depth: Int) -> AnyView {
         if let nestedOrdered = markup as? OrderedList {
             return AnyView(renderOrderedList(nestedOrdered, depth: depth + 1))
         } else if let nestedUnordered = markup as? UnorderedList {
             return AnyView(renderUnorderedList(nestedUnordered, depth: depth + 1))
         } else {
-            return renderBlock(markup)
+            return renderBlock(markup, features: computeInlineFeatures(markup))
         }
     }
 
@@ -418,7 +419,7 @@ struct MarkdownRenderer: View {
             let finalColspan = displayColspan * 2 - 1
 
             if cell.rowspan > 0 {
-                renderInlineChildren(cell)
+                renderInlineChildren(cell, features: computeInlineFeatures(cell))
                     .font(theme.bodySwiftUIFont)
                     .fontWeight(isHeader ? .semibold : nil)
                     .foregroundColor(theme.textColor)
@@ -444,14 +445,34 @@ struct MarkdownRenderer: View {
 
     // MARK: - Inline Rendering
 
+    /// Computes feature flags for a markup node by traversing its subtree.
+    /// Used for non-top-level blocks (blockquote children, list children, table cells)
+    /// where features are not precomputed in MarkdownBlockNode.
+    private func computeInlineFeatures(_ markup: any Markup) -> MarkdownBlockFeatures {
+        var features: MarkdownBlockFeatures = []
+        if markup is Markdown.Image { features.insert(.hasImages) }
+        if markup is Markdown.Link { features.insert(.hasLinks) }
+        if let code = markup as? InlineCode, let refs = parseMCodeReferences(from: code.code), !refs.isEmpty {
+            features.insert(.hasMCodeReferences)
+        }
+        if let plainTextConvertible = markup as? (any PlainTextConvertibleMarkup) {
+            if LaTeXPreprocessor.containsLaTeX(plainTextConvertible.plainText) {
+                features.insert(.hasLaTeX)
+            }
+        }
+        for child in markup.children {
+            features.formUnion(computeInlineFeatures(child))
+        }
+        return features
+    }
+
     @ViewBuilder
-    private func renderInlineChildren(_ parent: any Markup) -> some View {
-        buildInlineText(from: parent)
+    private func renderInlineChildren(_ parent: any Markup, features: MarkdownBlockFeatures) -> some View {
+        buildInlineText(from: parent, features: features)
     }
 
     /// Builds a Text view from inline children, using precomputed feature flags.
-    private func buildInlineText(from parent: any Markup) -> AnyView {
-        let features = snapshot.featuresMap[ObjectIdentifier(parent as AnyObject)] ?? []
+    private func buildInlineText(from parent: any Markup, features: MarkdownBlockFeatures) -> AnyView {
 
         if features.contains(.hasLaTeX) {
             return AnyView(renderTextWithLaTeX(parent))
@@ -544,17 +565,10 @@ struct MarkdownRenderer: View {
     }
 
     /// Renders text that may contain inline LaTeX, using cached segments when available.
-    /// Renders text that may contain inline LaTeX, using cached segments when available.
     @ViewBuilder
     private func renderTextWithLaTeX(_ parent: any Markup) -> some View {
-        let oid = ObjectIdentifier(parent as AnyObject)
-        let segments: [LaTeXPreprocessor.Segment] = {
-            if let cached = snapshot.latexSegments[oid] {
-                return cached
-            }
-            let plainText = extractPlainText(from: parent)
-            return LaTeXPreprocessor.extractSegments(from: plainText)
-        }()
+        let plainText = extractPlainText(from: parent)
+        let segments = LaTeXPreprocessor.extractSegments(from: plainText)
 
         FlowLayout(
             spacing: 0,

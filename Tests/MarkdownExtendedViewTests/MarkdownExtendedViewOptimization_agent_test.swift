@@ -11,7 +11,7 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
         let content = "Check this [link](https://example.com) out."
         let snapshot = await MarkdownRenderSnapshot.parse(content)
         let paragraph = snapshot.blocks.first!
-        let features = try XCTUnwrap(snapshot.featuresMap[ObjectIdentifier(paragraph.markup as AnyObject)])
+        let features = paragraph.features
         XCTAssertTrue(features.contains(.hasLinks))
     }
 
@@ -20,7 +20,7 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
         let content = "Here is ![alt](image.png) an image."
         let snapshot = await MarkdownRenderSnapshot.parse(content)
         let paragraph = snapshot.blocks.first!
-        let features = try XCTUnwrap(snapshot.featuresMap[ObjectIdentifier(paragraph.markup as AnyObject)])
+        let features = paragraph.features
         XCTAssertTrue(features.contains(.hasImages))
     }
 
@@ -29,10 +29,9 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
         let content = "The formula $x^2 + y^2 = z^2$ is inline."
         let snapshot = await MarkdownRenderSnapshot.parse(content)
         let paragraph = snapshot.blocks.first!
-        let features = try XCTUnwrap(snapshot.featuresMap[ObjectIdentifier(paragraph.markup as AnyObject)])
+        let features = paragraph.features
         XCTAssertTrue(features.contains(.hasLaTeX))
-        // latexSegments should also be populated for the Text node containing the formula
-        XCTAssertFalse(snapshot.latexSegments.isEmpty)
+        // LaTeX segments are now computed inline at render time (no longer pre-cached)
     }
 
     @MainActor
@@ -40,7 +39,7 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
         let content = "See `file:///tmp/test.swift:1-5` for reference."
         let snapshot = await MarkdownRenderSnapshot.parse(content)
         let paragraph = snapshot.blocks.first!
-        let features = try XCTUnwrap(snapshot.featuresMap[ObjectIdentifier(paragraph.markup as AnyObject)])
+        let features = paragraph.features
         XCTAssertTrue(features.contains(.hasMCodeReferences))
     }
 
@@ -57,11 +56,12 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
         ```
         """
         let snapshot = await MarkdownRenderSnapshot.parse(content)
-        guard let codeBlock = snapshot.blocks.first?.markup as? CodeBlock else {
+        guard let codeBlockNode = snapshot.blocks.first,
+              codeBlockNode.markup is CodeBlock else {
             XCTFail("Expected a CodeBlock")
             return
         }
-        let highlights = snapshot.codeHighlights[ObjectIdentifier(codeBlock as AnyObject)]
+        let highlights = snapshot.codeHighlights[codeBlockNode.id]
         XCTAssertNotNil(highlights, "Code highlights should be precomputed during async parse")
         XCTAssertGreaterThan(highlights!.count, 0, "Should have at least one line of highlighted tokens")
     }
