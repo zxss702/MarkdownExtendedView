@@ -103,96 +103,75 @@ nonisolated enum LaTeXPreprocessor {
 
     /// Find display math ($$...$$) starting at the given index.
     private static func findDisplayMath(in text: String, from startIndex: String.Index) -> Match? {
-        // Check if we have "$$" at current position
-        guard startIndex < text.endIndex else { return nil }
-        let remaining = text[startIndex...]
-
-        guard remaining.hasPrefix("$$") else { return nil }
-
+        // Must start with "$$"
+        guard text.distance(from: startIndex, to: text.endIndex) >= 2 else { return nil }
+        
+        let startPlus2 = text.index(startIndex, offsetBy: 2)
+        guard text[startIndex..<startPlus2] == "$$" else { return nil }
+        
         // Find closing "$$"
-        let contentStart = text.index(startIndex, offsetBy: 2)
-        guard contentStart < text.endIndex else { return nil }
-
-        // Search for closing $$
-        var searchIndex = contentStart
-        while searchIndex < text.endIndex {
-            let searchRemaining = text[searchIndex...]
-            if searchRemaining.hasPrefix("$$") {
-                let content = String(text[contentStart..<searchIndex])
-                let endIndex = text.index(searchIndex, offsetBy: 2)
-                return Match(content: content.trimmingCharacters(in: .whitespacesAndNewlines), endIndex: endIndex)
-            }
-            searchIndex = text.index(after: searchIndex)
+        if let range = text.range(of: "$$", range: startPlus2..<text.endIndex) {
+            let content = String(text[startPlus2..<range.lowerBound])
+            return Match(content: content.trimmingCharacters(in: .whitespacesAndNewlines), endIndex: range.upperBound)
         }
-
-        return nil // No closing $$ found
+        
+        return nil
     }
 
-    /// Find inline math ($...$) starting at the given index.
-    /// Does not match $$ (which is display math).
     private static func findInlineMath(in text: String, from startIndex: String.Index) -> Match? {
-        // Check if we have "$" at current position (but not "$$")
-        guard startIndex < text.endIndex else { return nil }
-        let remaining = text[startIndex...]
-
-        // Must start with single $ but not $$
-        guard remaining.hasPrefix("$") && !remaining.hasPrefix("$$") else { return nil }
-
-        // Find closing "$" (not "$$")
-        let contentStart = text.index(after: startIndex)
-        guard contentStart < text.endIndex else { return nil }
-
-        // The content after $ shouldn't start with space (standard LaTeX rule)
-        if text[contentStart].isWhitespace { return nil }
-
-        // Search for closing $
-        var searchIndex = contentStart
-        while searchIndex < text.endIndex {
-            let char = text[searchIndex]
-
-            // Check for closing $ (not preceded by \ and not followed by another $)
-            if char == "$" {
-                // Check it's not escaped
-                if searchIndex > contentStart {
-                    let prevIndex = text.index(before: searchIndex)
-                    if text[prevIndex] == "\\" {
-                        searchIndex = text.index(after: searchIndex)
-                        continue
-                    }
-                }
-
-                // Check it's not $$ (would be display math)
-                let nextIndex = text.index(after: searchIndex)
-                if nextIndex < text.endIndex && text[nextIndex] == "$" {
-                    searchIndex = text.index(after: searchIndex)
-                    continue
-                }
-
-                // Check content doesn't end with space
-                let prevIndex = text.index(before: searchIndex)
-                if text[prevIndex].isWhitespace {
-                    searchIndex = text.index(after: searchIndex)
-                    continue
-                }
-
-                let content = String(text[contentStart..<searchIndex])
-                // Don't match empty content
-                if content.isEmpty {
-                    searchIndex = text.index(after: searchIndex)
-                    continue
-                }
-
-                return Match(content: content, endIndex: nextIndex)
+        guard startIndex < text.endIndex, text[startIndex] == "$" else { return nil }
+        
+        // Ensure not "$$"
+        let nextIndex = text.index(after: startIndex)
+        if nextIndex < text.endIndex && text[nextIndex] == "$" { return nil }
+        
+        guard nextIndex < text.endIndex else { return nil }
+        if text[nextIndex].isWhitespace { return nil } // Content shouldn't start with space
+        
+        var searchIndex = nextIndex
+        while let range = text.range(of: "$", range: searchIndex..<text.endIndex) {
+            let matchIndex = range.lowerBound
+            
+            // Check it's not escaped
+            var isEscaped = false
+            var escapeCheck = text.index(before: matchIndex)
+            var backslashCount = 0
+            while escapeCheck >= nextIndex && text[escapeCheck] == "\\" {
+                backslashCount += 1
+                if escapeCheck == nextIndex { break }
+                escapeCheck = text.index(before: escapeCheck)
             }
-
+            if backslashCount % 2 != 0 {
+                isEscaped = true
+            }
+            
+            if isEscaped {
+                searchIndex = range.upperBound
+                continue
+            }
+            
+            // Check it's not "$$"
+            if range.upperBound < text.endIndex && text[range.upperBound] == "$" {
+                searchIndex = text.index(after: range.upperBound)
+                continue
+            }
+            
+            // Check content doesn't end with space
+            let prevIndex = text.index(before: matchIndex)
+            if prevIndex >= nextIndex && text[prevIndex].isWhitespace {
+                searchIndex = range.upperBound
+                continue
+            }
+            
             // Don't allow newlines in inline math
-            if char.isNewline {
+            let content = String(text[nextIndex..<matchIndex])
+            if content.isEmpty || content.contains(where: { $0.isNewline }) {
                 return nil
             }
-
-            searchIndex = text.index(after: searchIndex)
+            
+            return Match(content: content, endIndex: range.upperBound)
         }
-
-        return nil // No closing $ found
+        
+        return nil
     }
 }
