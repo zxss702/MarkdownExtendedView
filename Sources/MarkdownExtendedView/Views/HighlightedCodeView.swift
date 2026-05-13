@@ -12,64 +12,75 @@ import SwiftUI
 /// each token with the appropriate color from the theme's ``SyntaxColors``.
 public struct HighlightedCodeView: View {
 
+    private let code: String
+    private let language: String?
     private let theme: MarkdownTheme
-    @State private var lines: [[Token]]
+    
+    @State private var resolvedLines: [[Token]]?
 
-    public init(code: String, language: String?, theme: MarkdownTheme, highlightedLines: [[Token]]? = nil) {
+    public init(code: String, language: String?, theme: MarkdownTheme) {
+        self.code = code
+        self.language = language
         self.theme = theme
-
-        let resolvedLines: [[Token]]
-        if let highlightedLines {
-            resolvedLines = highlightedLines
+        
+        let normalizedCode = code.trimmingCharacters(in: .newlines)
+        let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
+        if let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines {
+            self._resolvedLines = State(initialValue: cachedLines)
         } else {
-            let normalizedCode = code.trimmingCharacters(in: .newlines)
-            let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
-            let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines
-            let computedLines = cachedLines ?? Self.makeHighlightedLines(
-                code: normalizedCode,
-                language: language
-            )
-
-            if cachedLines == nil {
-                HighlightedCodeSnapshotCache.shared.setObject(
-                    HighlightedCodeSnapshot(lines: computedLines),
-                    forKey: cacheKey as NSString
-                )
-            }
-
-            resolvedLines = computedLines
+            self._resolvedLines = State(initialValue: nil)
         }
-
-        _lines = State(initialValue: resolvedLines)
     }
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: theme.codeLineSpacing) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, lineTokens in
-                lineView(for: lineTokens)
+        Group {
+            if let resolvedLines {
+                buildText(from: resolvedLines)
+            } else {
+                SwiftUI.Text(code.trimmingCharacters(in: .newlines))
+                    .foregroundColor(theme.textColor)
+            }
+        }
+        .font(theme.codeBlockSwiftUIFont)
+        .codeSelectionTextPassThrough()
+        .task(id: code) {
+            if resolvedLines == nil {
+                let normalizedCode = code.trimmingCharacters(in: .newlines)
+                let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
+                
+                let computedLines = await Task.detached(priority: .userInitiated) {
+                    Self.makeHighlightedLines(code: normalizedCode, language: language)
+                }.value
+                
+                await MainActor.run {
+                    HighlightedCodeSnapshotCache.shared.setObject(
+                        HighlightedCodeSnapshot(lines: computedLines),
+                        forKey: cacheKey as NSString
+                    )
+                    self.resolvedLines = computedLines
+                }
             }
         }
     }
-
-    @ViewBuilder
-    private func lineView(for tokens: [Token]) -> some View {
-        if tokens.isEmpty {
-            Text(" ")
-                .font(theme.codeBlockSwiftUIFont)
-                .codeSelectionTextPassThrough()
-                .contentTransition(.numericText(countsDown: true))
-        } else {
-            tokens.reduce(SwiftUI.Text("")) { result, token in
-                result + SwiftUI.Text(token.text)
-                    .foregroundColor(color(for: token.type))
+    
+    private func buildText(from lines: [[Token]]) -> SwiftUI.Text {
+        var combinedText = SwiftUI.Text("")
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                combinedText = combinedText + SwiftUI.Text("\n")
             }
-            .font(theme.codeBlockSwiftUIFont)
-            .codeSelectionTextPassThrough()
-            .contentTransition(.numericText(countsDown: true))
+            if line.isEmpty {
+                combinedText = combinedText + SwiftUI.Text(" ")
+            } else {
+                for token in line {
+                    combinedText = combinedText + SwiftUI.Text(token.text).foregroundColor(Self.color(for: token.type, theme: theme))
+                }
+            }
         }
+        return combinedText
     }
 
-    private func color(for tokenType: TokenType) -> Color {
+    private static func color(for tokenType: TokenType, theme: MarkdownTheme) -> Color {
         switch tokenType {
         case .keyword:
             return theme.syntaxColors.keyword
@@ -88,7 +99,7 @@ public struct HighlightedCodeView: View {
         }
     }
 
-    private static func makeHighlightedLines(code: String, language: String?) -> [[Token]] {
+    nonisolated private static func makeHighlightedLines(code: String, language: String?) -> [[Token]] {
         let tokens = SyntaxHighlighter().tokenize(code, language: language)
         return splitIntoLines(tokens)
     }
