@@ -18,10 +18,11 @@ public struct MarkdownView: View, @MainActor Equatable {
     public init(_ content: String, baseURL: URL? = nil) {
         self.content = content
         self.baseURL = baseURL
-        let initialSnapshot = content.count > Self.synchronousParseCharacterLimit
-            ? MarkdownRenderSnapshot.empty
-            : MarkdownRenderSnapshot.parse(content)
-        self._snapshot = State(initialValue: initialSnapshot)
+        if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
+            self._snapshot = State(initialValue: cached)
+        } else {
+            self._snapshot = State(initialValue: MarkdownRenderSnapshot.empty)
+        }
     }
 
     // MARK: - Stored Properties
@@ -46,9 +47,14 @@ public struct MarkdownView: View, @MainActor Equatable {
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
             .lineLimit(nil)
-#if os(macOS) || os(iOS)
-            .selectable()
-#endif
+//#if os(macOS) || os(iOS)
+//            .selectable()
+//#endif
+            .task {
+                if snapshot.blocks.isEmpty && !content.isEmpty {
+                    scheduleSnapshotUpdate(for: content, debounce: false)
+                }
+            }
             .onChange(of: content) { _, newValue in
                 scheduleSnapshotUpdate(for: newValue, debounce: true)
             }

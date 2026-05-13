@@ -10,39 +10,56 @@ struct MarkdownBlockFeatures: OptionSet, Sendable {
     static let hasMCodeReferences = MarkdownBlockFeatures(rawValue: 1 << 3)
 }
 
+func computeFeaturesRecursively(_ markup: any Markup) -> MarkdownBlockFeatures {
+    var features: MarkdownBlockFeatures = []
+    
+    switch markup {
+    case _ as Markdown.Link:
+        features.insert(.hasLinks)
+    case _ as Markdown.Image:
+        features.insert(.hasImages)
+    case let code as InlineCode:
+        if code.code.contains("$") {
+            features.insert(.hasLaTeX)
+        }
+        if let refs = parseMCodeReferences(from: code.code), !refs.isEmpty {
+            features.insert(.hasMCodeReferences)
+        }
+    case let text as Markdown.Text:
+        if text.string.contains("$") {
+            features.insert(.hasLaTeX)
+        }
+    default:
+        break
+    }
+    
+    for child in markup.children {
+        features.formUnion(computeFeaturesRecursively(child))
+    }
+    return features
+}
+
 struct MarkdownRenderSnapshot: Sendable {
     let blocks: [MarkdownBlockNode]
-    let codeHighlights: [UUID: [[Token]]]
 
-    static let empty = MarkdownRenderSnapshot(blocks: [], codeHighlights: [:])
+    static let empty = MarkdownRenderSnapshot(blocks: [])
 
     // MARK: - Async parse
 
     static func parse(_ content: String, previousBlocks: [MarkdownBlockNode] = []) async -> Self {
         let children = await parsedChildren(for: content)
-        let blocks = buildBlockNodes(children: children, reusingFrom: previousBlocks)
-        let codeHighlights = await precomputeCodeHighlights(blocks: blocks)
-        return MarkdownRenderSnapshot(blocks: blocks, codeHighlights: codeHighlights)
-    }
-
-    // MARK: - Async parse (compatibility — width/theme no longer used)
-
-    static func parse(
-        _ content: String,
-        width: CGFloat,
-        theme: MarkdownTheme,
-        previousBlocks: [MarkdownBlockNode] = []
-    ) async -> Self {
-        return await Self.parse(content, previousBlocks: previousBlocks)
-    }
-
-    // MARK: - Sync parse (initial render, main actor)
-
-    @MainActor
-    static func parse(_ content: String, previousBlocks: [MarkdownBlockNode] = []) -> Self {
-        let children = parsedChildrenSync(for: content)
-        let blocks = buildBlockNodes(children: children, reusingFrom: previousBlocks)
-        return MarkdownRenderSnapshot(blocks: blocks, codeHighlights: [:])
+        let blocks = await buildBlockNodes(children: children, reusingFrom: previousBlocks)
+        let snapshot = MarkdownRenderSnapshot(blocks: blocks)
+        
+        await MainActor.run {
+            cacheSnapshot(snapshot, for: content)
+        }
+        
+        Task.detached(priority: .background) {
+            await precomputeCodeHighlights(blocks: blocks)
+        }
+        
+        return snapshot
     }
 
     // MARK: - Block node building with feature extraction
@@ -50,47 +67,31 @@ struct MarkdownRenderSnapshot: Sendable {
     private static func buildBlockNodes(
         children: [any Markup],
         reusingFrom previous: [MarkdownBlockNode]
-    ) -> [MarkdownBlockNode] {
-        let blocks = children.enumerated().map { index, child in
-            let kind = String(describing: type(of: child))
-            let id: UUID
-            if index < previous.count, previous[index].kind == kind {
-                id = previous[index].id
-            } else {
-                id = UUID()
+    ) async -> [MarkdownBlockNode] {
+        await withTaskGroup(of: (Int, MarkdownBlockNode).self) { group in
+            for (index, child) in children.enumerated() {
+                let kind = String(describing: type(of: child))
+                let id: UUID
+                if index < previous.count, previous[index].kind == kind {
+                    id = previous[index].id
+                } else {
+                    id = UUID()
+                }
+                
+                group.addTask {
+                    let features = computeFeaturesRecursively(child)
+                    let node = MarkdownBlockNode(id: id, kind: kind, markup: child, features: features)
+                    return (index, node)
+                }
             }
-            let features = computeFeaturesRecursively(child)
-            return MarkdownBlockNode(id: id, kind: kind, markup: child, features: features)
-        }
-        return blocks
-    }
-
-    /// Recursively computes feature flags for a markup node and all descendants.
-    @discardableResult
-    private static func computeFeaturesRecursively(_ markup: any Markup) -> MarkdownBlockFeatures {
-        var features: MarkdownBlockFeatures = []
-
-        if markup is Markdown.Link {
-            features.insert(.hasLinks)
-        }
-        if markup is Markdown.Image {
-            features.insert(.hasImages)
-        }
-        if let code = markup as? InlineCode, let refs = parseMCodeReferences(from: code.code), !refs.isEmpty {
-            features.insert(.hasMCodeReferences)
-        }
-        if let plainTextConvertible = markup as? (any PlainTextConvertibleMarkup) {
-            if LaTeXPreprocessor.containsLaTeX(plainTextConvertible.plainText) {
-                features.insert(.hasLaTeX)
+            
+            var results: [Int: MarkdownBlockNode] = [:]
+            for await (index, node) in group {
+                results[index] = node
             }
+            
+            return (0..<children.count).compactMap { results[$0] }
         }
-
-        for child in markup.children {
-            let childFeatures = computeFeaturesRecursively(child)
-            features.formUnion(childFeatures)
-        }
-
-        return features
     }
 
     // MARK: - Code highlighting precomputation
@@ -136,20 +137,19 @@ struct MarkdownRenderSnapshot: Sendable {
         return children
     }
 
+    // MARK: - Snapshot cache
+
     @MainActor
-    private static func parsedChildrenSync(for content: String) -> [any Markup] {
-        if let cached = MarkdownParsedChildrenCache.shared.object(forKey: content as NSString)?.children {
-            return cached
-        }
+    static func cachedSnapshot(for content: String) -> MarkdownRenderSnapshot? {
+        MarkdownSnapshotCache.shared.object(forKey: content as NSString)?.snapshot
+    }
 
-        let children = preprocessedChildren(for: content)
-
-        MarkdownParsedChildrenCache.shared.setObject(
-            MarkdownParsedChildrenBox(children: children),
+    @MainActor
+    static func cacheSnapshot(_ snapshot: MarkdownRenderSnapshot, for content: String) {
+        MarkdownSnapshotCache.shared.setObject(
+            MarkdownSnapshotBox(snapshot: snapshot),
             forKey: content as NSString
         )
-
-        return children
     }
 
     // MARK: - Preprocessing
@@ -186,5 +186,22 @@ private final class MarkdownParsedChildrenBox: NSObject, @unchecked Sendable {
 
     init(children: [any Markup]) {
         self.children = children
+    }
+}
+
+@MainActor
+private final class MarkdownSnapshotCache {
+    static let shared: NSCache<NSString, MarkdownSnapshotBox> = {
+        let cache = NSCache<NSString, MarkdownSnapshotBox>()
+        cache.countLimit = 128
+        return cache
+    }()
+}
+
+private final class MarkdownSnapshotBox: NSObject, @unchecked Sendable {
+    let snapshot: MarkdownRenderSnapshot
+
+    init(snapshot: MarkdownRenderSnapshot) {
+        self.snapshot = snapshot
     }
 }
