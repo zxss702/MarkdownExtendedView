@@ -7,24 +7,24 @@
 import Foundation
 import SwiftUI
 
-struct SelectionSection {
+struct SelectionSection: @unchecked Sendable {
     let range: Range<Int>
     let frame: CGRect
 }
 
-struct SelectionLine {
+struct SelectionLine: @unchecked Sendable {
     let rect: CGRect
     let sliceRange: Range<Int>
 }
 
-struct SelectionSlice {
+struct SelectionSlice: @unchecked Sendable {
     let range: Range<Int>
     let rect: CGRect
     let lineIndex: Int
     let layoutDirection: LayoutDirection
 }
 
-struct SelectionDocument {
+struct SelectionDocument: @unchecked Sendable {
     @MainActor
     static let empty = SelectionDocument(
         attributedString: NSAttributedString(),

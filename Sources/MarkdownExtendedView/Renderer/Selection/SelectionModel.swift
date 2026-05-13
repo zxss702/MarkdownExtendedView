@@ -8,6 +8,19 @@ import Foundation
 import Observation
 import SwiftUI
 
+private struct SelectionBuildResult: @unchecked Sendable {
+    let document: SelectionDocument
+    let cache: [SelectionLayoutSnapshotKey: SelectionLayoutSnapshot]
+}
+
+private struct SendableBaseLayouts: @unchecked Sendable {
+    let items: [(layout: SwiftUI.Text.Layout, origin: CGPoint)]
+}
+
+private struct SendableFormulaData: @unchecked Sendable {
+    let items: [(FormulaSelectionData, CGRect)]
+}
+
 enum SelectionAffinity: Int, Comparable {
     case downstream
     case upstream
@@ -138,21 +151,52 @@ final class SelectionModel {
         }
 
         let oldRange = selectedRange
-        let snapshots = input.buildSnapshots()
-        let newDocument = buildDocument(from: snapshots)
+        
+        // 1. Safely resolve all geometry bounds on MainActor
+        let baseLayouts = SendableBaseLayouts(items: input.base.map { (layout: $0.layout, origin: input.geometry[$0.origin]) })
+        let formulasData = SendableFormulaData(items: input.formulas.map { (formula: $0, rect: input.geometry[$0.bounds]) })
+        let isDragging = self.isDraggingSelection
+        let cachedSnapshots = self.cachedLayoutSnapshots
+        
+        // 2. Detach heavy string operations and layout building
+        let result = await Task.detached(priority: .userInitiated) { () -> SelectionBuildResult in
+            var snapshots: [SelectionLayoutSnapshot] = []
+            
+            snapshots.append(contentsOf: baseLayouts.items.compactMap {
+                SelectionLayoutSnapshot(base: $0.layout, origin: $0.origin)
+            })
+            
+            snapshots.append(contentsOf: SelectionDocumentBuilder.makeSnapshots(from: formulasData.items))
+            
+            var localCache = cachedSnapshots
+            let document: SelectionDocument
+            
+            if isDragging {
+                for snapshot in snapshots {
+                    localCache[snapshot.key] = snapshot
+                }
+                document = SelectionDocumentBuilder.build(from: Array(localCache.values))
+            } else {
+                localCache.removeAll()
+                document = SelectionDocumentBuilder.build(from: snapshots)
+            }
+            
+            return SelectionBuildResult(document: document, cache: localCache)
+        }.value
 
         guard !Task.isCancelled else {
             return
         }
 
         lastLayoutInput = input
-        document = newDocument
-        cachedTextHitRects = newDocument.hitRects
+        document = result.document
+        cachedLayoutSnapshots = result.cache
+        cachedTextHitRects = result.document.hitRects
 
         if isDraggingSelection {
             updateDraggedSelection()
         } else if let oldRange {
-            selectedRange = oldRange.clamped(to: newDocument.textLength)
+            selectedRange = oldRange.clamped(to: result.document.textLength)
         } else {
             selectionRects = []
         }
@@ -276,16 +320,8 @@ final class SelectionModel {
     }
 
     private func buildDocument(from snapshots: [SelectionLayoutSnapshot]) -> SelectionDocument {
-        if isDraggingSelection {
-            for snapshot in snapshots {
-                cachedLayoutSnapshots[snapshot.key] = snapshot
-            }
-
-            return SelectionDocumentBuilder.build(from: Array(cachedLayoutSnapshots.values))
-        }
-
-        cachedLayoutSnapshots.removeAll()
-        return SelectionDocumentBuilder.build(from: snapshots)
+        // Now handled inside the detached task
+        return SelectionDocument.empty
     }
 
     private func updateDraggedSelection() {

@@ -38,7 +38,7 @@ struct SelectionLayoutInput: Equatable, @unchecked Sendable {
 
     func buildSnapshots() -> [SelectionLayoutSnapshot] {
         var snapshots = SelectionDocumentBuilder.makeSnapshots(from: base, geometry: geometry)
-        snapshots.append(contentsOf: SelectionDocumentBuilder.makeSnapshots(from: formulas, geometry: geometry))
+        snapshots.append(contentsOf: SelectionDocumentBuilder.makeSnapshots(from: formulas.map { ($0, geometry[$0.bounds]) }))
         return snapshots
     }
 
@@ -61,11 +61,10 @@ enum SelectionDocumentBuilder {
     }
 
     static func makeSnapshots(
-        from formulas: [FormulaSelectionData],
-        geometry: GeometryProxy
+        from formulas: [(FormulaSelectionData, CGRect)]
     ) -> [SelectionLayoutSnapshot] {
         formulas.compactMap {
-            SelectionLayoutSnapshot(formula: $0, geometry: geometry)
+            SelectionLayoutSnapshot(formula: $0.0, rect: $0.1)
         }
     }
 
@@ -140,7 +139,7 @@ enum SelectionDocumentBuilder {
     }
 }
 
-struct SelectionLayoutSnapshot {
+struct SelectionLayoutSnapshot: @unchecked Sendable {
     let key: SelectionLayoutSnapshotKey
     let attributedString: NSAttributedString
     let frame: CGRect
@@ -170,10 +169,9 @@ struct SelectionLayoutSnapshot {
         )
     }
 
-    init?(formula: FormulaSelectionData, geometry: GeometryProxy) {
+    init?(formula: FormulaSelectionData, rect: CGRect) {
         let text = formula.latex
         self.attributedString = NSAttributedString(string: text)
-        let rect = geometry[formula.bounds]
         self.frame = rect
         guard let key = SelectionLayoutSnapshotKey(text: text, frame: rect) else {
             return nil
@@ -241,7 +239,7 @@ struct SelectionLayoutSnapshot {
     }
 }
 
-struct SelectionLayoutSnapshotKey: Hashable {
+struct SelectionLayoutSnapshotKey: Hashable, @unchecked Sendable {
     let text: String
     let minX: Int
     let minY: Int
@@ -279,7 +277,7 @@ struct SelectionLayoutSnapshotKey: Hashable {
     }
 }
 
-struct SelectionLineSnapshot {
+struct SelectionLineSnapshot: @unchecked Sendable {
     let rect: CGRect
     let slices: [SelectionSliceSnapshot]
 
@@ -336,7 +334,7 @@ struct SelectionLineSnapshot {
     }
 }
 
-struct SelectionSliceSnapshot {
+struct SelectionSliceSnapshot: @unchecked Sendable {
     let rect: CGRect
     let characterRange: Range<Int>
     let layoutDirection: LayoutDirection
