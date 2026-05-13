@@ -431,7 +431,6 @@ struct fileIconView: View {
         case "pptx", "ppt":
             Image(systemName: "chart.bar.doc.horizontal")
                 .resizable()
-                .foregroundStyle(.orange)
 
         // 数据格式
         case "jsonc", "json5":
