@@ -45,9 +45,6 @@ public struct MarkdownView: View, @MainActor Equatable {
     // MARK: - Body
 
     public var body: some View {
-        MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
-            .lineLimit(nil)
-        
         Color.white
             .opacity(0.01)
             .frame(width: 0, height: 0)
@@ -63,6 +60,9 @@ public struct MarkdownView: View, @MainActor Equatable {
                 helper.updateTask?.cancel()
                 helper.updateTask = nil
             }
+            
+        MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
+            .lineLimit(nil)
     }
 
     // MARK: - Snapshot Updates
