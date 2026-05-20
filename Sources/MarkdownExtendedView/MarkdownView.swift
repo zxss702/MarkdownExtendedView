@@ -47,9 +47,10 @@ public struct MarkdownView: View, @MainActor Equatable {
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
             .lineLimit(nil)
-//#if os(macOS) || os(iOS)
-//            .selectable()
-//#endif
+        
+        Color.white
+            .opacity(0.01)
+            .frame(width: 0, height: 0)
             .task {
                 if snapshot.blocks.isEmpty && !content.isEmpty {
                     scheduleSnapshotUpdate(for: content, debounce: false)
