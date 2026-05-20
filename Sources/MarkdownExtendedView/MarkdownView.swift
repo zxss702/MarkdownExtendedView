@@ -12,15 +12,9 @@ import SwiftUI
 @Observable
 @MainActor
 public class MarkdownObject {
-    var snapshot: MarkdownRenderSnapshot
+    var snapshot: MarkdownRenderSnapshot  = MarkdownRenderSnapshot.empty
     
-    init(content: String) {
-        if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
-            self.snapshot = cached
-        } else {
-            self.snapshot = MarkdownRenderSnapshot.empty
-        }
-    }
+    init()
     
     @ObservationIgnored var updateTask: Task<Void, Never>? = nil
     @ObservationIgnored var hasAppeared = false
@@ -87,6 +81,11 @@ struct MarkdownObjectStateViewModifier: ViewModifier {
     
     func body(content view: Content) -> some View {
         view
+            .onAppear {
+                if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
+                    object.snapshot = cached
+                }
+            }
             .task {
                 await object.task(content: content)
             }
