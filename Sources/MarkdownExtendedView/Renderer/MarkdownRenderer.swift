@@ -32,7 +32,7 @@ struct MarkdownRenderer: View {
             MCodeReferenceHandler: MCodeReferenceHandler
         )
         
-        Group {
+        VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
             ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
                 RenderBlock(
                     markup: block.markup,
