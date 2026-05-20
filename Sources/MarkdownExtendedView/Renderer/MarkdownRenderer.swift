@@ -14,16 +14,11 @@ struct MarkdownRenderer: View {
     let snapshot: MarkdownRenderSnapshot
     let theme: MarkdownTheme
     let baseURL: URL?
-
+    let isLazy: Bool
+    
     @Environment(\.markdownLinkHandler) private var linkHandler
     @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
-
-    init(snapshot: MarkdownRenderSnapshot, theme: MarkdownTheme, baseURL: URL?) {
-        self.snapshot = snapshot
-        self.theme = theme
-        self.baseURL = baseURL
-    }
-
+    
     var body: some View {
         let context = MarkdownContext(
             theme: theme,
@@ -32,19 +27,36 @@ struct MarkdownRenderer: View {
             MCodeReferenceHandler: MCodeReferenceHandler
         )
         
-        VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
-            ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
-                RenderBlock(
-                    markup: block.markup,
-                    features: block.features,
-                    context: context
-                )
-                .transition(.markdownBlockAppear)
-                .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+        if isLazy {
+            LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+                ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
+                    RenderBlock(
+                        markup: block.markup,
+                        features: block.features,
+                        context: context
+                    )
+                    .transition(.markdownBlockAppear)
+                    .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
+                    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+                }
             }
+            .lineSpacing(theme.paragraphSpacing)
+        } else {
+            VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+                ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
+                    RenderBlock(
+                        markup: block.markup,
+                        features: block.features,
+                        context: context
+                    )
+                    .transition(.markdownBlockAppear)
+                    .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
+                    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+                }
+            }
+            .lineSpacing(theme.paragraphSpacing)
         }
-        .lineSpacing(theme.paragraphSpacing)
+       
     }
 }
 

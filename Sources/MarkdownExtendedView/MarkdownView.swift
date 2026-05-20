@@ -15,7 +15,7 @@ public struct MarkdownView: View, @MainActor Equatable {
 
     // MARK: - Initialization
 
-    public init(_ content: String, baseURL: URL? = nil) {
+    public init(_ content: String, baseURL: URL? = nil, isLazy: Bool = false) {
         self.content = content
         self.baseURL = baseURL
         if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
@@ -23,13 +23,14 @@ public struct MarkdownView: View, @MainActor Equatable {
         } else {
             self._snapshot = State(initialValue: MarkdownRenderSnapshot.empty)
         }
+        self.isLazy = isLazy
     }
 
     // MARK: - Stored Properties
 
     private let content: String
     private let baseURL: URL?
-
+    private let isLazy: Bool
     // MARK: - State
 
     @Environment(\.markdownTheme) private var theme
@@ -45,7 +46,7 @@ public struct MarkdownView: View, @MainActor Equatable {
     // MARK: - Body
 
     public var body: some View {
-        MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL)
+        MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL, isLazy: isLazy)
             .lineLimit(nil)
             .task {
                 if snapshot.blocks.isEmpty && !content.isEmpty {
