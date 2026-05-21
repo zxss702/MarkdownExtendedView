@@ -429,7 +429,7 @@ struct fileIconView: View {
             Image("tex")
                 .resizable()
         case "pptx", "ppt":
-            Image(systemName: "chart.bar.doc.horizontal")
+            Image(systemName: "play.rectangle")
                 .resizable()
 
         // 数据格式
