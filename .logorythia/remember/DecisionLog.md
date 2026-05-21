@@ -1,3 +1,24 @@
+### 2026-05-21 · 内容/几何变更时清空选区，防止选择错位
+
+**决策主题**：当 Text 内容改变或 view geometry size 改变时，清空选择内容，避免选择高亮错位。
+
+**结论**：
+- `SelectionLayoutInput` 新增 `containerSize: CGSize` 字段并纳入 `==` 等价判断，使窗口缩放、横竖屏切换等纯几何变更能被 `.task(id:)` 感知并重新触发。
+- `SelectionModel.updateLayout` 中，当 `!isDraggingSelection` 时，不再将旧选区 `clamped(to:)` 到新文档，而是直接清空（`selectedRange = nil`）。
+
+**背景**：
+- 用户报告：Text 内容改变或 view 尺寸改变后，旧选区 offset 在新文本/新几何中无意义，导致选择高亮错位。
+- 根因：`SelectionLayoutInput` 未包含 `containerSize`，几何变更被 `==` 忽略，`.task(id:)` 不会重新触发；`updateLayout` 中 `clamped` 钳制保留了无意义的旧 offset。
+
+**影响范围**：
+- `SelectionDocumentBuilder.swift`：`SelectionLayoutInput` 新增 `containerSize: CGSize` 字段，`==` 增加 `lhs.containerSize == rhs.containerSize`。
+- `SelectableMarkdownRenderer.swift`：构造 `SelectionLayoutInput` 时传入 `containerSize: geometry.size`。
+- `SelectionModel.swift`：`updateLayout` 中 `oldRange.clamped(to:)` 分支改为 `selectedRange = nil`。
+
+**后续动作**：编译通过，零错误。拖拽分支（isDraggingSelection）不受影响。
+
+---
+
 ### 2026-05-11 · 弃用 ObjectIdentifier 字典查找，改为渲染管线显式传递
 
 **决策主题**：`ObjectIdentifier(markup as AnyObject)` 字典查找全部失效导致图片/公式/代码引用渲染退化。
@@ -60,6 +81,8 @@
 
 **后续动作**：无。
 
+
+
 ---
 
 ### 2026-05-08 · Grid 表格合并列与横纵分割线接合修复
@@ -83,6 +106,8 @@
 - `MarkdownRenderer.swift`：表格自适应布局分支的接合逻辑。
 
 **后续动作**：无。
+
+
 
 ---
 
@@ -108,6 +133,8 @@
 
 **后续动作**：无。
 
+
+
 ---
 
 ### 2026-05-08 · SelectableMarkdownRenderer PreferenceKey 归并点重构
@@ -131,3 +158,5 @@
 - `SelectableMarkdownRenderer.swift`：PreferenceKey 归并与几何收集逻辑。
 
 **后续动作**：无。
+
+
