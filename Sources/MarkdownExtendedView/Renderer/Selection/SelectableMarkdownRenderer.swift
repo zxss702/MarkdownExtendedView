@@ -35,7 +35,7 @@ struct SelectableMarkdownRendererViewModifier: ViewModifier {
             }
             .background {
                 GeometryReader { geometry in
-                    let input = SelectionLayoutInput(base: textLayouts, formulas: formulas, geometry: geometry)
+                    let input = SelectionLayoutInput(base: textLayouts, formulas: formulas, geometry: geometry, containerSize: geometry.size)
                     SelectionInteractionOverlay(model: model)
                         .task(id: input) {
                             await model.updateLayout(input)

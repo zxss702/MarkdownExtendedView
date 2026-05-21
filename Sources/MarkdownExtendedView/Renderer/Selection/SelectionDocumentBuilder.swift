@@ -31,9 +31,10 @@ struct SelectionLayoutInput: Equatable, @unchecked Sendable {
     let base: SwiftUI.Text.LayoutKey.Value
     let formulas: [FormulaSelectionData]
     let geometry: GeometryProxy
+    let containerSize: CGSize
 
     static func == (lhs: SelectionLayoutInput, rhs: SelectionLayoutInput) -> Bool {
-        lhs.base == rhs.base && lhs.formulas == rhs.formulas
+        lhs.base == rhs.base && lhs.formulas == rhs.formulas && lhs.containerSize == rhs.containerSize
     }
 
     func buildSnapshots() -> [SelectionLayoutSnapshot] {

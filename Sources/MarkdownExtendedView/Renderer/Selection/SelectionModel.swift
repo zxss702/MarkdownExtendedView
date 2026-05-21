@@ -150,8 +150,6 @@ final class SelectionModel {
             }
         }
 
-        let oldRange = selectedRange
-        
         // 1. Safely resolve all geometry bounds on MainActor
         let baseLayouts = SendableBaseLayouts(items: input.base.map { (layout: $0.layout, origin: input.geometry[$0.origin]) })
         let formulasData = SendableFormulaData(items: input.formulas.map { (formula: $0, rect: input.geometry[$0.bounds]) })
@@ -195,10 +193,8 @@ final class SelectionModel {
 
         if isDraggingSelection {
             updateDraggedSelection()
-        } else if let oldRange {
-            selectedRange = oldRange.clamped(to: result.document.textLength)
         } else {
-            selectionRects = []
+            selectedRange = nil
         }
     }
 
