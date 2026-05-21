@@ -41,6 +41,7 @@ struct MarkdownRenderer: View {
                 }
             }
             .lineSpacing(theme.paragraphSpacing)
+            .foregroundColor(theme.textColor)
         } else {
             VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
                 ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
@@ -55,6 +56,7 @@ struct MarkdownRenderer: View {
                 }
             }
             .lineSpacing(theme.paragraphSpacing)
+            .foregroundColor(theme.textColor)
         }
        
     }

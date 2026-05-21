@@ -44,21 +44,19 @@ public struct HighlightedCodeView: View {
         .font(theme.codeBlockSwiftUIFont)
         .codeSelectionTextPassThrough()
         .task(id: code) {
-            if resolvedLines == nil {
-                let normalizedCode = code.trimmingCharacters(in: .newlines)
-                let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
-                
-                let computedLines = await Task.detached(priority: .userInitiated) {
-                    Self.makeHighlightedLines(code: normalizedCode, language: language)
-                }.value
-                
-                await MainActor.run {
-                    HighlightedCodeSnapshotCache.shared.setObject(
-                        HighlightedCodeSnapshot(lines: computedLines),
-                        forKey: cacheKey as NSString
-                    )
-                    self.resolvedLines = computedLines
-                }
+            let normalizedCode = code.trimmingCharacters(in: .newlines)
+            let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
+            
+            let computedLines = await Task.detached(priority: .userInitiated) {
+                Self.makeHighlightedLines(code: normalizedCode, language: language)
+            }.value
+            
+            await MainActor.run {
+                HighlightedCodeSnapshotCache.shared.setObject(
+                    HighlightedCodeSnapshot(lines: computedLines),
+                    forKey: cacheKey as NSString
+                )
+                self.resolvedLines = computedLines
             }
         }
     }
