@@ -62,6 +62,46 @@ struct MarkdownRenderSnapshot: Sendable {
         return snapshot
     }
 
+    // MARK: - Sync parse
+
+    @MainActor
+    static func parseSynchronously(_ content: String, previousBlocks: [MarkdownBlockNode] = []) -> Self {
+        let children: [any Markup]
+        if let cached = MarkdownParsedChildrenCache.shared.object(forKey: content as NSString)?.children {
+            children = cached
+        } else {
+            children = preprocessedChildren(for: content)
+            MarkdownParsedChildrenCache.shared.setObject(
+                MarkdownParsedChildrenBox(children: children),
+                forKey: content as NSString
+            )
+        }
+
+        var blocks: [MarkdownBlockNode] = []
+        for (index, child) in children.enumerated() {
+            let kind = String(describing: type(of: child))
+            let id: UUID
+            if index < previousBlocks.count, previousBlocks[index].kind == kind {
+                id = previousBlocks[index].id
+            } else {
+                id = UUID()
+            }
+            let features = computeFeaturesRecursively(child)
+            let node = MarkdownBlockNode(id: id, kind: kind, markup: child, features: features)
+            blocks.append(node)
+        }
+        
+        let snapshot = MarkdownRenderSnapshot(blocks: blocks)
+        cacheSnapshot(snapshot, for: content)
+        
+        let blocksForHighlight = blocks
+        Task.detached(priority: .background) {
+            await precomputeCodeHighlights(blocks: blocksForHighlight)
+        }
+        
+        return snapshot
+    }
+
     // MARK: - Block node building with feature extraction
 
     private static func buildBlockNodes(
