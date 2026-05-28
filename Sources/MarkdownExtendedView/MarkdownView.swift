@@ -48,7 +48,7 @@ public struct MarkdownView: View, @MainActor Equatable {
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL, isLazy: isLazy)
             .lineLimit(nil)
-            .task {
+            .onAppear {
                 if snapshot.blocks.isEmpty && !content.isEmpty {
                     scheduleSnapshotUpdate(for: content, debounce: false)
                 }
@@ -71,7 +71,6 @@ public struct MarkdownView: View, @MainActor Equatable {
         let delay: TimeInterval = debounce ? max(0, 0.1 - timeSinceLastUpdate) : 0
 
         helper.updateTask?.cancel()
-        let animate = helper.hasAppeared
         let previousBlocks = snapshot.blocks
 
         helper.updateTask = Task.detached(priority: .userInitiated) { [content] in
@@ -89,14 +88,7 @@ public struct MarkdownView: View, @MainActor Equatable {
             await MainActor.run {
                 guard !Task.isCancelled else { return }
                 helper.lastUpdateTime = Date()
-                if animate {
-                    withAnimation(.snappy) {
-                        snapshot = nextSnapshot
-                    }
-                } else {
-                    snapshot = nextSnapshot
-                    helper.hasAppeared = true
-                }
+                snapshot = nextSnapshot
                 helper.updateTask = nil
             }
         }
@@ -116,7 +108,6 @@ extension MarkdownView {
     @Observable
     final class ViewHelper {
         @ObservationIgnored var updateTask: Task<Void, Never>? = nil
-        @ObservationIgnored var hasAppeared = false
         @ObservationIgnored var lastUpdateTime: Date = .distantPast
     }
 }
