@@ -56,26 +56,14 @@ struct MermaidView: View {
                     .background(theme.codeBackgroundColor)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             } else {
-                // Loading state
-                HStack {
-                    ProgressView()
-                        .padding(.trailing, 8)
-                    Text("Rendering chart...")
-                        .font(.system(size: fontSize))
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.codeBackgroundColor)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                // Empty state while loading instantly
+                Color.clear.frame(width: 0, height: 0)
             }
         }
         .task(id: code) {
             do {
                 let result = try await MermaidRenderer.shared.render(code: code, fontSize: fontSize)
-                withAnimation(.easeOut(duration: 0.2)) {
-                    self.renderResult = result
-                }
+                self.renderResult = result
             } catch {
                 self.errorMessage = error.localizedDescription
             }
