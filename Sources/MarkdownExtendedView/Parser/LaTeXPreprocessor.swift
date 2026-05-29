@@ -36,41 +36,40 @@ nonisolated enum LaTeXPreprocessor {
     static func extractSegments(from text: String) -> [Segment] {
         var segments: [Segment] = []
         var currentIndex = text.startIndex
-        var textBuffer = ""
+        var textStartIndex = text.startIndex
 
         while currentIndex < text.endIndex {
             // Check for display math ($$...$$) first
             if let displayMatch = findDisplayMath(in: text, from: currentIndex) {
                 // Flush text buffer
-                if !textBuffer.isEmpty {
-                    segments.append(.text(textBuffer))
-                    textBuffer = ""
+                if textStartIndex < currentIndex {
+                    segments.append(.text(String(text[textStartIndex..<currentIndex])))
                 }
                 segments.append(.latex(displayMatch.content, isBlock: true))
                 currentIndex = displayMatch.endIndex
+                textStartIndex = currentIndex
                 continue
             }
 
             // Check for inline math ($...$)
             if let inlineMatch = findInlineMath(in: text, from: currentIndex) {
                 // Flush text buffer
-                if !textBuffer.isEmpty {
-                    segments.append(.text(textBuffer))
-                    textBuffer = ""
+                if textStartIndex < currentIndex {
+                    segments.append(.text(String(text[textStartIndex..<currentIndex])))
                 }
                 segments.append(.latex(inlineMatch.content, isBlock: false))
                 currentIndex = inlineMatch.endIndex
+                textStartIndex = currentIndex
                 continue
             }
 
-            // Regular character - add to buffer
-            textBuffer.append(text[currentIndex])
+            // Regular character - move forward
             currentIndex = text.index(after: currentIndex)
         }
 
         // Flush remaining text buffer
-        if !textBuffer.isEmpty {
-            segments.append(.text(textBuffer))
+        if textStartIndex < text.endIndex {
+            segments.append(.text(String(text[textStartIndex..<text.endIndex])))
         }
 
         return segments

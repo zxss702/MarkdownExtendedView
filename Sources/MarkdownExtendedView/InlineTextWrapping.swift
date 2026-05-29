@@ -7,51 +7,78 @@ enum MarkdownInlineTextWrapping {
         guard !text.isEmpty else { return [] }
 
         var units: [String] = []
-        var current = ""
-        var currentCJK = ""
+        var currentStartIndex = text.startIndex
+        var currentCJKStartIndex = text.startIndex
+        
+        var hasCurrent = false
+        var hasCJK = false
+        var cjkCount = 0
 
-        func flushCurrent() {
-            guard !current.isEmpty else { return }
-            units.append(current)
-            current.removeAll(keepingCapacity: true)
+        func flushCurrent(upTo index: String.Index) {
+            if hasCurrent {
+                units.append(String(text[currentStartIndex..<index]))
+                hasCurrent = false
+            }
         }
 
-        func flushCJK() {
-            guard !currentCJK.isEmpty else { return }
-            units.append(currentCJK)
-            currentCJK.removeAll(keepingCapacity: true)
+        func flushCJK(upTo index: String.Index) {
+            if hasCJK {
+                units.append(String(text[currentCJKStartIndex..<index]))
+                hasCJK = false
+                cjkCount = 0
+            }
         }
 
-        for character in text {
+        var currentIndex = text.startIndex
+        while currentIndex < text.endIndex {
+            let character = text[currentIndex]
+            let nextIndex = text.index(after: currentIndex)
+
             if character.isNewline {
-                flushCurrent()
-                flushCJK()
-                units.append(String(character))
+                flushCurrent(upTo: currentIndex)
+                flushCJK(upTo: currentIndex)
+                units.append(String(text[currentIndex..<nextIndex]))
+                currentIndex = nextIndex
                 continue
             }
 
             if character.isWhitespace {
-                current.append(character)
-                flushCJK()
-                flushCurrent()
+                if hasCJK {
+                    flushCJK(upTo: currentIndex)
+                }
+                if !hasCurrent {
+                    currentStartIndex = currentIndex
+                }
+                hasCurrent = true
+                flushCurrent(upTo: nextIndex)
+                currentIndex = nextIndex
                 continue
             }
 
             if character.isCJKLineBreakUnit {
-                flushCurrent()
-                currentCJK.append(character)
-                if currentCJK.count >= maxCJKUnitLength {
-                    flushCJK()
+                flushCurrent(upTo: currentIndex)
+                if !hasCJK {
+                    currentCJKStartIndex = currentIndex
+                    hasCJK = true
                 }
+                cjkCount += 1
+                if cjkCount >= maxCJKUnitLength {
+                    flushCJK(upTo: nextIndex)
+                }
+                currentIndex = nextIndex
                 continue
             }
 
-            flushCJK()
-            current.append(character)
+            flushCJK(upTo: currentIndex)
+            if !hasCurrent {
+                currentStartIndex = currentIndex
+                hasCurrent = true
+            }
+            currentIndex = nextIndex
         }
 
-        flushCurrent()
-        flushCJK()
+        flushCurrent(upTo: text.endIndex)
+        flushCJK(upTo: text.endIndex)
         return units
     }
 }
