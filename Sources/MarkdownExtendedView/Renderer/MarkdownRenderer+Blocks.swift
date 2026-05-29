@@ -31,7 +31,7 @@ struct RenderBlock: View {
         } else if markup is ThematicBreak {
             Divider().padding(.vertical, 8)
         } else if let htmlBlock = markup as? HTMLBlock {
-            SwiftUI.Text(htmlBlock.rawHTML)
+            SwiftUI.Text(NSAttributedString(html: htmlBlock.rawHTML.data(using: .utf8), documentAttributes: nil) )
                 .font(context.theme.codeSwiftUIFont)
                 .foregroundColor(context.theme.secondaryTextColor)
                 .selectionTextPassThrough()

@@ -24,25 +24,26 @@ struct MermaidView: View {
     let theme: MarkdownTheme
 
     @State private var contentSize: CGSize = .zero
+    @State private var containerWidth: CGFloat = 0
 
     var body: some View {
-        GeometryReader { proxy in
-            MermaidWebView(code: code, fontSize: theme.mermaidFontSize, contentSize: $contentSize)
-                .frame(
-                    width: resolvedWidth(for: proxy.size.width),
-                    height: MarkdownLayoutMetrics.fixedMermaidHeight
-                )
-                .background(theme.codeBackgroundColor)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(height: MarkdownLayoutMetrics.fixedMermaidHeight)
-    }
+        let fontSize: CGFloat = 14
+        let scale = contentSize.width > 0 && containerWidth > 0 ? min(1.0, containerWidth / contentSize.width) : 1.0
+        let finalWidth = contentSize.width > 0 ? contentSize.width * scale : (containerWidth > 0 ? containerWidth : 300)
+        let finalHeight = contentSize.height > 0 ? contentSize.height * scale : 200
 
-    private func resolvedWidth(for availableWidth: CGFloat) -> CGFloat {
-        let clampedAvailableWidth = max(availableWidth, 1)
-        guard contentSize.width > 0 else { return clampedAvailableWidth }
-        return min(contentSize.width, clampedAvailableWidth)
+        MermaidWebView(code: code, fontSize: fontSize, contentSize: $contentSize)
+            .frame(width: finalWidth, height: finalHeight)
+            .background(theme.codeBackgroundColor)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { containerWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { _, newWidth in containerWidth = newWidth }
+                }
+            )
     }
 }
 
@@ -304,10 +305,8 @@ private func generateHTML(for code: String, fontSize: CGFloat) -> String {
                     height = rect.height;
                 }
 
-                const availableHeight = Math.max(root.clientHeight - paddingY, 1);
-                const scale = height > 0 ? Math.min(1, availableHeight / height) : 1;
-                const fittedWidth = Math.ceil(width * scale + paddingX);
-                const fittedHeight = Math.ceil(height * scale + paddingY);
+                const fittedWidth = Math.ceil(width + paddingX);
+                const fittedHeight = Math.ceil(height + paddingY);
 
                 if (
                     window.webkit &&
