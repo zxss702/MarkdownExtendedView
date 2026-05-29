@@ -164,14 +164,14 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate {
                 "code": code,
                 "fontSize": fontSize
             ],
-            in: nil,
-            in: .page
+            contentWorld: .page
         )
         
         guard let jsonString = jsResult as? String,
               let data = jsonString.data(using: .utf8),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw NSError(domain: "MermaidRenderer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON response"])
+            let resultDesc = (jsResult != nil) ? String(describing: jsResult!) : "nil"
+            throw NSError(domain: "MermaidRenderer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON response. jsResult: \(resultDesc)"])
         }
         
         if let errorMsg = dict["error"] as? String {
