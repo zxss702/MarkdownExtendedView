@@ -23,7 +23,7 @@ struct MermaidView: View {
 
     @State private var renderResult: MermaidRenderResult? = nil
     @State private var containerWidth: CGFloat = 0
-    @State private var isFailed: Bool = false
+    @State private var errorMessage: String? = nil
 
     var body: some View {
         let fontSize: CGFloat = 14
@@ -47,8 +47,8 @@ struct MermaidView: View {
                     .background(theme.codeBackgroundColor)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else if isFailed {
-                Text("Failed to render diagram.")
+            } else if let errorMsg = errorMessage {
+                Text("Error: \(errorMsg)")
                     .font(.system(size: fontSize))
                     .foregroundColor(.red)
                     .padding()
@@ -77,7 +77,7 @@ struct MermaidView: View {
                     self.renderResult = result
                 }
             } catch {
-                self.isFailed = true
+                self.errorMessage = error.localizedDescription
             }
         }
     }

@@ -153,18 +153,17 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate {
         
         let id = "mermaid-diagram-\(UUID().uuidString.lowercased())"
         
-        let safeCode = code
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "$", with: "\\$")
-            
         let jsBody = """
-        return await renderToSVG('\(id)', `\(safeCode)`, \(fontSize));
+        return await renderToSVG(id, code, fontSize);
         """
         
         let jsResult = try await webView.callAsyncJavaScript(
             jsBody,
-            arguments: [:],
+            arguments: [
+                "id": id,
+                "code": code,
+                "fontSize": fontSize
+            ],
             in: nil,
             in: .page
         )
@@ -175,10 +174,14 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate {
             throw NSError(domain: "MermaidRenderer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON response"])
         }
         
-        if let errorMsg = dict["error"] as? String, let fallbackSvg = dict["svg"] as? String {
-            // Display the error directly as SVG/HTML
-            let errResult = MermaidRenderResult(svg: fallbackSvg, width: 300, height: 100)
-            return errResult
+        if let errorMsg = dict["error"] as? String {
+            if let fallbackSvg = dict["svg"] as? String {
+                // Display the error directly as SVG/HTML
+                let errResult = MermaidRenderResult(svg: fallbackSvg, width: 300, height: 100)
+                return errResult
+            } else {
+                throw NSError(domain: "MermaidRenderer", code: -2, userInfo: [NSLocalizedDescriptionKey: errorMsg])
+            }
         }
         
         guard let svg = dict["svg"] as? String,
