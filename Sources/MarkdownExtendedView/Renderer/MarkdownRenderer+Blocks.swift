@@ -31,12 +31,17 @@ struct RenderBlock: View {
         } else if markup is ThematicBreak {
             Divider().padding(.vertical, 8)
         } else if let htmlBlock = markup as? HTMLBlock {
-            SwiftUI.Text(NSAttributedString(html: htmlBlock.rawHTML.data(using: .utf8), documentAttributes: nil) )
-                .font(context.theme.codeSwiftUIFont)
-                .foregroundColor(context.theme.secondaryTextColor)
-                .selectionTextPassThrough()
-        } else {
-            EmptyView()
+            SwiftUI.Text(
+                AttributedString(
+                    NSAttributedString(
+                        html: htmlBlock.rawHTML.data(using: .utf8) ?? Data(),
+                        documentAttributes: nil
+                    ) ?? NSAttributedString(string: htmlBlock.rawHTML)
+                )
+            )
+            .font(context.theme.codeSwiftUIFont)
+            .foregroundColor(context.theme.secondaryTextColor)
+            .selectionTextPassThrough()
         }
     }
 }
