@@ -45,7 +45,6 @@ struct SelectableMarkdownRendererViewModifier: ViewModifier {
             .overlay {
                 SelectionHighlightLayer(model: model)
                     .allowsHitTesting(false)
-                    .blendMode(.multiply)
             }
     }
 }
@@ -61,6 +60,7 @@ private struct SelectionHighlightLayer: View {
 
     var body: some View {
         Canvas { context, _ in
+            context.blendMode = .multiply
             for selectionRect in model.selectionRects {
                 context.fill(
                     Path(selectionRect.rect),
