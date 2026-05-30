@@ -63,7 +63,10 @@ enum MarkdownInlineTextWrapping {
                 }
                 cjkCount += 1
                 if cjkCount >= maxCJKUnitLength {
-                    flushCJK(upTo: nextIndex)
+                    let nextIsTrailing = nextIndex < text.endIndex && text[nextIndex].isTrailingPunctuation
+                    if !nextIsTrailing {
+                        flushCJK(upTo: nextIndex)
+                    }
                 }
                 currentIndex = nextIndex
                 continue
@@ -84,10 +87,21 @@ enum MarkdownInlineTextWrapping {
 }
 
 private extension Character {
+    var isTrailingPunctuation: Bool {
+        guard self.isPunctuation || self.isSymbol else { return false }
+        switch self {
+        case "“", "‘", "（", "【", "《", "[", "(", "{", "<", "「", "『":
+            return false
+        default:
+            return true
+        }
+    }
+
     var isCJKLineBreakUnit: Bool {
         unicodeScalars.contains { scalar in
             switch scalar.value {
             case 0x1100...0x11FF,
+                 0x2000...0x206F, // General Punctuation (quotes, dashes, ellipses)
                  0x2E80...0xA4CF,
                  0xAC00...0xD7AF,
                  0xF900...0xFAFF,
