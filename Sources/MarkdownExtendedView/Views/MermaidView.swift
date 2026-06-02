@@ -44,6 +44,7 @@ struct MermaidView: View {
 
                 MermaidSVGWebView(svg: result.svg)
                     .frame(width: finalWidth, height: finalHeight)
+                    .padding(.all, 16)
                     .background(theme.codeBackgroundColor)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .frame(maxWidth: .infinity, alignment: .leading)
