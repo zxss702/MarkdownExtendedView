@@ -25,6 +25,7 @@ struct MermaidView: View {
     @State private var containerWidth: CGFloat = 0
     @State private var errorMessage: String? = nil
 
+    @State var showSheet = false
     var body: some View {
         let fontSize: CGFloat = 14
         
@@ -41,13 +42,33 @@ struct MermaidView: View {
                 let scale = result.width > 0 && containerWidth > 0 ? min(1.0, containerWidth / result.width) : 1.0
                 let finalWidth = result.width > 0 ? result.width * scale : (containerWidth > 0 ? containerWidth : 300)
                 let finalHeight = result.height > 0 ? result.height * scale : 200
+                
+                ScrollView(.horizontal) {
+                    MermaidSVGWebView(svg: result.svg)
+                        .frame(width: finalWidth, height: finalHeight)
+                        .padding(.all, 16)
+                        .background(theme.codeBackgroundColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .onTapGesture {
+                            showSheet.toggle()
+                        }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .sheet(isPresented: $showSheet) {
+                    MermaidSVGWebView(svg: result.svg)
+                        .frame(width: result.width, height: result.height)
+                        .padding(.all, 32)
+                        .overlay(alignment: .topTrailing) {
+                            Button {
+                                showSheet = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .frame(width: 48, height: 48)
+                                    .containerShape(Circle())
+                            }
 
-                MermaidSVGWebView(svg: result.svg)
-                    .frame(width: finalWidth, height: finalHeight)
-                    .padding(.all, 16)
-                    .background(theme.codeBackgroundColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                }
             } else if let errorMsg = errorMessage {
                 Text("Error: \(errorMsg)")
                     .font(.system(size: fontSize))
