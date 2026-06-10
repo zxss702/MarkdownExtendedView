@@ -56,6 +56,7 @@ struct MermaidView: View {
                     }
             }
         }
+        .frame(maxWidth: .infinity)
         .task(id: code, priority: .userInitiated) {
             do {
                 let result = try await MermaidRenderer.shared.render(code: code, fontSize: fontSize)
