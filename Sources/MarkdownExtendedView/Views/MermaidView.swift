@@ -22,73 +22,45 @@ struct MermaidView: View {
     let theme: MarkdownTheme
 
     @State private var renderResult: MermaidRenderResult? = nil
-    @State private var containerWidth: CGFloat = 0
-    @State private var errorMessage: String? = nil
 
     @State var showSheet = false
     var body: some View {
         let fontSize: CGFloat = 14
         
-        ZStack(alignment: .leading) {
-            // Background to measure available width
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { containerWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { _, newWidth in containerWidth = newWidth }
-            }
-            .frame(height: 0)
-
+        GeometryReader { proxy in
             if let result = renderResult {
-                let scale = result.width > 0 && containerWidth > 0 ? min(1.0, containerWidth / result.width) : 1.0
-                let finalWidth = result.width > 0 ? result.width * scale : (containerWidth > 0 ? containerWidth : 300)
-                let finalHeight = result.height > 0 ? result.height * scale : 200
+                let scale = result.width > 0 ? min(1.0, proxy.size.width / result.width) : 1.0
+                let finalWidth = result.width * scale
+                let finalHeight = result.height * scale
                 
-                ScrollView(.horizontal) {
-                    MermaidSVGWebView(svg: result.svg)
-                        .frame(width: finalWidth, height: finalHeight)
-                        .padding(.all, 16)
-                        .background(theme.codeBackgroundColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .onTapGesture {
-                            showSheet.toggle()
-                        }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .sheet(isPresented: $showSheet) {
-                    MermaidSVGWebView(svg: result.svg)
-                        .frame(width: result.width, height: result.height)
-                        .padding(.all, 32)
-                        .overlay(alignment: .topTrailing) {
-                            Button {
-                                showSheet = false
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .frame(width: 48, height: 48)
-                                    .containerShape(Circle())
+                MermaidSVGWebView(svg: result.svg)
+                    .frame(width: finalWidth, height: finalHeight)
+                    .allowsHitTesting(false)
+                    .onTapGesture {
+                        showSheet.toggle()
+                    }
+                    .sheet(isPresented: $showSheet) {
+                        MermaidSVGWebView(svg: result.svg)
+                            .frame(width: result.width, height: result.height)
+                            .padding(.all, 32)
+                            .overlay(alignment: .topTrailing) {
+                                Button {
+                                    showSheet = false
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .frame(width: 48, height: 48)
+                                        .containerShape(Circle())
+                                }
+                                .buttonStyle(.plain)
                             }
-
-                        }
-                }
-            } else if let errorMsg = errorMessage {
-                Text("Error: \(errorMsg)")
-                    .font(.system(size: fontSize))
-                    .foregroundColor(.red)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(theme.codeBackgroundColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-            } else {
-                // Empty state while loading instantly
-                Color.clear.frame(width: 0, height: 0)
+                    }
             }
         }
-        .task(id: code) {
+        .task(id: code, priority: .userInitiated) {
             do {
                 let result = try await MermaidRenderer.shared.render(code: code, fontSize: fontSize)
                 self.renderResult = result
-            } catch {
-                self.errorMessage = error.localizedDescription
-            }
+            } catch {}
         }
     }
 }
