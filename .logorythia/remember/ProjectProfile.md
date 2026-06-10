@@ -8,7 +8,7 @@
   - `Theme/`：主题系统（`Theme.swift`）。
   - `Renderer/`：Markdown 渲染核心（`MarkdownRenderer.swift`、`LaTeXView.swift`）。含 `TableAdaptiveLayout`（超宽表格自适应）与 `BlockFormulaKey`（Block 公式 FlowLayout 宽度占位）。
     - `Selection/`：文本/公式选中逻辑（`SelectableMarkdownRenderer.swift`、`SelectionDocument.swift`、`SelectionDocumentBuilder.swift`），支持 LaTeX 公式 `FormulaSelectionData` 锚点提取与选中 Snapshot 生成。
-  - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。
+  - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。其中 `MermaidView.swift` 支持点击图表后以 `ScrollView` 水平滚动 + `sheet` 全尺寸弹窗放大预览。
   - `SwiftMath/`：内置数学排版引擎（原 `ExtendedSwiftMath` 外部依赖已移除并内嵌）。
     - `MathBundle/`：字体资源与 bundling（`MathFont.swift`）。
     - `MathRender/`：核心排版与渲染（`MTFontManager`、`MTMathAtomFactory`、`MTMathList`、`MTMathListDisplay`、`MTTypesetter`）。
