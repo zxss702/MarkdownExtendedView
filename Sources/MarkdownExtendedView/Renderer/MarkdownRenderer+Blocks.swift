@@ -110,9 +110,9 @@ struct RenderCodeBlock: View {
 struct RenderMermaidBlock: View {
     let codeBlock: CodeBlock
     let context: MarkdownContext
-
+    
     var body: some View {
-        MermaidView(code: codeBlock.code, theme: context.theme)
+        MermaidView(code: codeBlock.code, theme: context.theme, viewWidth: context.viewWidth)
     }
 }
 

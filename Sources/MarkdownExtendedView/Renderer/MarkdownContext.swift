@@ -12,13 +12,16 @@ struct MarkdownContext {
     let baseURL: URL?
     let linkHandler: (@Sendable (URL) -> Void)?
     let MCodeReferenceHandler: (@Sendable (MCodeReference) -> Void)?
+    let viewWidth: CGFloat
     
     init(
         theme: MarkdownTheme,
         baseURL: URL?,
+        viewWidth: CGFloat,
         linkHandler: (@Sendable (URL) -> Void)?,
         MCodeReferenceHandler: (@Sendable (MCodeReference) -> Void)?
     ) {
+        self.viewWidth = viewWidth
         self.theme = theme
         self.baseURL = baseURL
         self.linkHandler = linkHandler

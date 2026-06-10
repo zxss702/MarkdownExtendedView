@@ -20,45 +20,46 @@ struct MarkdownRenderer: View {
     @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
     
     var body: some View {
-        let context = MarkdownContext(
-            theme: theme,
-            baseURL: baseURL,
-            linkHandler: linkHandler,
-            MCodeReferenceHandler: MCodeReferenceHandler
-        )
-        
-        if isLazy {
-            LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
-                ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
-                    RenderBlock(
-                        markup: block.markup,
-                        features: block.features,
-                        context: context
-                    )
-                    .transition(.markdownBlockAppear)
-                    .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+        GeometryReader { proxy in
+            let context = MarkdownContext(
+                theme: theme,
+                baseURL: baseURL, viewWidth: proxy.size.width,
+                linkHandler: linkHandler,
+                MCodeReferenceHandler: MCodeReferenceHandler
+            )
+            
+            if isLazy {
+                LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+                    ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
+                        RenderBlock(
+                            markup: block.markup,
+                            features: block.features,
+                            context: context
+                        )
+                        .transition(.markdownBlockAppear)
+                        .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
+                        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+                    }
                 }
-            }
-            .lineSpacing(theme.paragraphSpacing)
-            .foregroundColor(theme.textColor)
-        } else {
-            VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
-                ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
-                    RenderBlock(
-                        markup: block.markup,
-                        features: block.features,
-                        context: context
-                    )
-                    .transition(.markdownBlockAppear)
-                    .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+                .lineSpacing(theme.paragraphSpacing)
+                .foregroundColor(theme.textColor)
+            } else {
+                VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+                    ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
+                        RenderBlock(
+                            markup: block.markup,
+                            features: block.features,
+                            context: context
+                        )
+                        .transition(.markdownBlockAppear)
+                        .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
+                        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
+                    }
                 }
+                .lineSpacing(theme.paragraphSpacing)
+                .foregroundColor(theme.textColor)
             }
-            .lineSpacing(theme.paragraphSpacing)
-            .foregroundColor(theme.textColor)
         }
-       
     }
 }
 

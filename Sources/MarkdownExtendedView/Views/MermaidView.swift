@@ -21,15 +21,19 @@ struct MermaidView: View {
     let code: String
     let theme: MarkdownTheme
 
+    let viewWidth: CGFloat
+    
     @State private var renderResult: MermaidRenderResult? = nil
 
     @State var showSheet = false
+    
+    @State var width: CGFloat? = nil
     var body: some View {
         let fontSize: CGFloat = 14
         
-        GeometryReader { proxy in
+        ZStack {
             if let result = renderResult {
-                let scale = result.width > 0 ? min(1.0, proxy.size.width / result.width) : 1.0
+                let scale = min(1.0, viewWidth / result.width)
                 let finalWidth = result.width * scale
                 let finalHeight = result.height * scale
                 
@@ -56,7 +60,6 @@ struct MermaidView: View {
                     }
             }
         }
-        .frame(maxWidth: .infinity)
         .task(id: code, priority: .userInitiated) {
             do {
                 let result = try await MermaidRenderer.shared.render(code: code, fontSize: fontSize)
