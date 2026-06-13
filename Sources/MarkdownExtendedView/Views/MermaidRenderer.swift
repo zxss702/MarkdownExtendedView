@@ -26,7 +26,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate {
     private var pendingContinuations: [CheckedContinuation<Void, Never>] = []
     
     // In-memory cache to prevent re-rendering the same Mermaid code.
-    private let cache = NSCache<NSString, MermaidRendererCacheBox>()
+    let cache = NSCache<NSString, MermaidRendererCacheBox>()
     
     private override init() {
         let config = WKWebViewConfiguration()
@@ -145,9 +145,6 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate {
     /// Renders the Mermaid code to SVG or fetches it from cache.
     func render(code: String, fontSize: CGFloat) async throws -> MermaidRenderResult {
         let cacheKey = "\(code)_\(fontSize)" as NSString
-        if let cached = cache.object(forKey: cacheKey) {
-            return cached.result
-        }
         
         await waitForReady()
         
@@ -198,7 +195,7 @@ final class MermaidRenderer: NSObject, WKNavigationDelegate {
 }
 
 /// A class wrapper to store value types in NSCache
-private final class MermaidRendererCacheBox: NSObject {
+final class MermaidRendererCacheBox: NSObject {
     let result: MermaidRenderResult
     init(result: MermaidRenderResult) {
         self.result = result

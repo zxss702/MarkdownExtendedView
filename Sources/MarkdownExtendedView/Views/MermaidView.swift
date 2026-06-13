@@ -40,9 +40,6 @@ struct MermaidView: View {
                 MermaidSVGWebView(svg: result.svg)
                     .frame(width: finalWidth, height: finalHeight)
                     .allowsHitTesting(false)
-                    .onTapGesture {
-                        showSheet.toggle()
-                    }
                     .sheet(isPresented: $showSheet) {
                         MermaidSVGWebView(svg: result.svg)
                             .frame(width: result.width, height: result.height)
@@ -60,11 +57,20 @@ struct MermaidView: View {
                     }
             }
         }
+        .onTapGesture {
+            showSheet.toggle()
+        }
         .task(id: code, priority: .userInitiated) {
             do {
                 let result = try await MermaidRenderer.shared.render(code: code, fontSize: fontSize)
                 self.renderResult = result
             } catch {}
+        }
+        .onChange(of: code) { oldValue, newValue in
+            let cacheKey = "\(newValue)_\(fontSize)" as NSString
+            if let cached = MermaidRenderer.shared.cache.object(forKey: cacheKey) {
+                self.renderResult = cached.result
+            }
         }
     }
 }
