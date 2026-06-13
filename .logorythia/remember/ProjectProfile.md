@@ -8,7 +8,7 @@
   - `Theme/`：主题系统（`Theme.swift`）。
   - `Renderer/`：Markdown 渲染核心（`MarkdownRenderer.swift`、`LaTeXView.swift`）。含 `TableAdaptiveLayout`（超宽表格自适应）与 `BlockFormulaKey`（Block 公式 FlowLayout 宽度占位）。
     - `Selection/`：文本/公式选中逻辑（`SelectableMarkdownRenderer.swift`、`SelectionDocument.swift`、`SelectionDocumentBuilder.swift`），支持 LaTeX 公式 `FormulaSelectionData` 锚点提取与选中 Snapshot 生成。
-  - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。其中 `MermaidView.swift` 支持点击图表后以 `ScrollView` 水平滚动 + `sheet` 全尺寸弹窗放大预览。
+  - `Views/`：原子视图组件（`MarkdownView.swift`、`MermaidView.swift`、`HighlightedCodeView.swift`、`MarkdownImageView.swift`、`SafariView.swift`、`TappableLinkView.swift`）。其中 `MermaidView.swift` 支持点击图表后以 `ScrollView` 水平滚动 + `sheet` 全尺寸弹窗放大预览。缓存策略：缓存读取由 `MermaidView` 在 `onChange` 中触发后下传给 `MermaidRenderer`，而非在 render 内部自行读取；可见性统一为 `internal`。
   - `SwiftMath/`：内置数学排版引擎（原 `ExtendedSwiftMath` 外部依赖已移除并内嵌）。
     - `MathBundle/`：字体资源与 bundling（`MathFont.swift`）。
     - `MathRender/`：核心排版与渲染（`MTFontManager`、`MTMathAtomFactory`、`MTMathList`、`MTMathListDisplay`、`MTTypesetter`）。
@@ -21,6 +21,7 @@
 工程约束：
 - `SwiftMath` 为内置 fork，非外部包；并发安全正从 `NSLock` + `nonisolated(unsafe)` 逐步迁移至 `Mutex` + `@unchecked Sendable`（已覆盖 `MTFontV2.lazy mathTable`、`MTMathAtomFactory` 字典缓存、`RWLock` 底层），修改源码时需同步处理以避免 Swift 6 编译警告。
 - `SelectableMarkdownRenderer` 的 content 背景视图叠层需保持精简，多余叠层会显著拖慢文本拖选性能。已重构 PreferenceKey 归并点：状态分离后通过 `.background` 几何视图预收集数据，避免在 `backgroundPreferenceValue` 回调中再次堆叠子级。
+- **统一宽度捕获模式**：`MarkdownRenderer`、`SelectableMarkdownRenderer`、`MermaidView` 等渲染组件已统一使用 `@State viewWidth` + `.background` 替代外层 `GeometryReader` 捕获视图宽度。`GeometryReader` 增加视图层级与性能损耗，`@State` + `.background` 是更轻量的替代方案。
 - **选区在内容/几何变更时自动清空**：`SelectionLayoutInput` 包含 `containerSize` 字段并参与 `==` 判断，几何变更可触发重算；`updateLayout` 中非拖拽状态下直接清空选区（`selectedRange = nil`），而非钳制到新文档，防止选择错位。
 - **渲染管线中禁用 `ObjectIdentifier(markup as AnyObject)` 做字典 key**：`any Markup` 协议存在体的 ObjectIdentifier 不稳定——不同类实例（Paragraph、Image、Text 等）可能返回同一个假值，与 `MarkdownBlockNode.markup` 的 ObjectIdentifier 也不同。所有特征/缓存信息通过渲染管线显式传递，而非基于 ObjectIdentifier 的字典查找。
   - `MarkdownBlockFeatures`（特征掩码）由 `MarkdownBlockNode.features` 直接持有，渲染时沿 `renderBlock` → `renderParagraph/renderHeading` → `renderInlineChildren` → `buildInlineText` 管线传递。

@@ -36,3 +36,25 @@
 **追踪指针**：
 - `file:///Volumes/知阳/开发/Packges/MarkdownExtendedView/Sources/MarkdownExtendedView/Renderer/MarkdownRenderer.swift`
 - `file:///Volumes/知阳/开发/Packges/MarkdownExtendedView/Sources/MarkdownExtendedView/Renderer/Selection/SelectableMarkdownRenderer.swift`
+
+---
+
+### 2026-06-13 · Inline LaTeX 溢出修复：GeometryReader 检测约束宽度的关键作用
+
+**事件摘要**：四层修复（识别层特征校验 + 视图层 maxWidth + 排版层透传 + 布局层 InlineFormulaKey）完成后，契约审查发现最大漏洞：`RenderInlineFlowElement` 未向 `LaTeXView` 传入 `maxWidth`，导致 typesetter 始终收到 0。补充 GeometryReader 方案打通端到端链路。
+
+**上下文标签**：`MarkdownExtendedView`, `LaTeX`, `FlowLayout`, `GeometryReader`, `PreferenceKey`, `MTTypesetter`, `布局链路`
+
+**关键结论**：
+- 四层整改的基础设施全部到位不等于端到端可用——**管道铺好了但水没通**是常见陷阱。`mathView` 的 `maxWidth` 参数链存在隐性脱节：`RenderInlineFlowElement` → `LaTeXView(maxWidth: nil)` → `MathView(maxWidth: nil)` → `getDisplay(maxWidth: 0)` → typesetter 不换行。
+- GeometryReader 补充方案证明：**FlowLayout 的 Layout 级约束（ProposedViewSize）可以被子视图通过 PreferenceKey 检测到**。即使 Layout 不显式传参，子视图通过 `.background(GeometryReader)` 也能感知约束后的实际宽度。
+- SwiftUI 布局管线中，被 Layout 约束的子视图宽度可通过 `GeometryReader.size.width` 获得，这是「Layout 约束 → 子视图感知」的非侵入式桥接模式。
+- 一种可复用的 SwiftUI 布局模式：**Layout 通过 LayoutValueKey 标记类型 → measuredSubview 按标记施加约束 → 子视图通过 GeometryReader 检测约束宽度 → 子视图内部据此调整排版参数**。
+
+**反馈信号**：用户以「ok」触发四层修复，契约审查发现链路脱节后补充方案，最终编译通过。无额外反馈。
+
+**追踪指针**：
+- `file:///Users/zhiyang/开发/Packges/MarkdownExtendedView/Sources/MarkdownExtendedView/Renderer/LaTeXView.swift`
+- `file:///Users/zhiyang/开发/Packges/MarkdownExtendedView/Sources/MarkdownExtendedView/Renderer/FlowLayout.swift`
+- `file:///Users/zhiyang/开发/Packges/MarkdownExtendedView/Sources/MarkdownExtendedView/Renderer/MarkdownRenderer+Inlines.swift`
+- `file:///Users/zhiyang/开发/Packges/MarkdownExtendedView/Sources/MarkdownExtendedView/Parser/LaTeXPreprocessor.swift`

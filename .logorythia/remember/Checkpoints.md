@@ -182,3 +182,30 @@
 - `git status` 确认工作区为空
 
 ---
+
+## 2026-06-13 · Inline LaTeX 误识别与布局溢出修复（四层联动）
+
+**任务目标**：修复 `$100`、`$HOME` 等含 `$` 的普通文本被误判为 LaTeX 导致布局崩坏的问题。
+
+**当前状态**：四项改动全部编译通过，端到端链路已打通（契约审查发现 maxWidth 未透传后补充 GeometryReader 方案）。
+
+- `fix(latex-preprocessor)`：1 个文件（`LaTeXPreprocessor.swift`）
+  - 新增 `hasLaTeXCharacter(in:)` 校验特征字符（`\\ ^ _ { } + - * = > < /` 或非 ASCII），无特征字符则放弃匹配
+- `fix(latex-view)`：1 个文件（`LaTeXView.swift`）
+  - `MathView` 增加 `maxWidth` 属性，用 `.frame(idealWidth:maxWidth:)` + `fixedSize` 替代硬固化 frame
+  - `MathDisplayCache.getDisplay` 增加 `maxWidth` 参数透传
+  - `LaTeXView` 增加 `GeometryReader` + `LayoutWidthPreferenceKey` 检测约束宽度
+- `fix(flow-layout)`：1 个文件（`FlowLayout.swift`）
+  - 新增 `InlineFormulaKey`，`measuredSubview` 对超宽 inline LaTeX 强制 `width = maxWidth`
+- `fix(inline-renderer)`：1 个文件（`MarkdownRenderer+Inlines.swift`）
+  - inline LaTeX 附加 `.layoutValue(key: InlineFormulaKey.self, value: true)`
+
+**已做变更**：四层修复（识别层特征校验 + 视图层 maxWidth 约束 + 排版层 maxWidth 透传 + 布局层 InlineFormulaKey 兜底），以及契约审查后补充 GeometryReader 检测链路（端到端数据流全通）。
+
+**下一步行动**：无，任务已彻底结束。
+
+**风险与未决事项**：测试侧有预先存在的 `codeHighlights` API 变更导致测试失败，与本次改动无关。
+
+**复现与验证路径**：
+- `swift build` 确认主目标编译零错误
+- `swift test` 测试结果中仅预先存在的 `MarkdownRenderSnapshot.codeHighlights` 错误，无 regression

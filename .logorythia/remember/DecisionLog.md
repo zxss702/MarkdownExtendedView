@@ -1,3 +1,22 @@
+### 2026-06-10 · MarkdownRenderer 移除 GeometryReader，统一宽度捕获模式
+
+**决策主题**：`MarkdownRenderer` 外层 `GeometryReader` 增加视图层级，改用 `@State` + `.background` 替代。
+
+**结论**：
+- 移除 `MarkdownRenderer` 外层的 `GeometryReader`，改为 `@State private var viewWidth: CGFloat = 0` + `.background(GeometryReader { ... })` 捕获视图宽度。
+- 这与 `5c7d4ac` MermaidView 重构风格一致，形成渲染层统一的宽度捕获模式。
+
+**背景**：
+- `GeometryReader` 在 SwiftUI 中会吞掉所有可用空间并增加一层视图层级，对性能与布局均有负面影响。
+- `.background` 方式在视图构建阶段即完成宽度收集，不会改变父级布局行为。
+
+**影响范围**：
+- `MarkdownRenderer.swift`：+50/-36，移除 GeometryReader 外层 wrapper，改用 `@State viewWidth` + `.background` 几何读取。
+
+**后续动作**：已提交 `891824a`。仅本地，未 push。
+
+---
+
 ### 2026-05-21 · 内容/几何变更时清空选区，防止选择错位
 
 **决策主题**：当 Text 内容改变或 view geometry size 改变时，清空选择内容，避免选择高亮错位。
@@ -81,7 +100,33 @@
 
 **后续动作**：无。
 
+---
 
+### 2026-06-13 · Inline LaTeX 误识别导致布局崩坏（四层根因链 + 修复方案）
+
+**决策主题**：含 `$` 的普通文本（价格、Shell 变量等）被误识别为 LaTeX，MathView 硬覆盖 proposal 导致流式布局溢出。
+
+**根因**（四层叠加效应）：
+- **识别层**：`LaTeXPreprocessor.containsLaTeX` 仅判断 `text.contains("$")`，`$100`、`$HOME` 等被误判。
+- **视图层**：`MathView.frame(width: displayList.width + inkPadding)` 硬覆盖 proposal，无视 FlowLayout 约束。
+- **排版层**：`maxWidth: 0` 传入 `createLineForMathList`，公式内部不换行。
+- **布局层**：`.latex` 作为原子 FlowElement，不可拆分导致整段溢出。
+
+**最终修复方案**（四层联动）：
+1. **识别层**：`LaTeXPreprocessor` 新增 `hasLaTeXCharacter(in:)` 校验——内容不含 `\\ ^ _ { } + - * = > < /` 或非 ASCII 字符时放弃匹配（`findInlineMath` 和 `findDisplayMath` 均应用）。
+2. **视图层**：`MathView` 增加 `maxWidth: CGFloat?` 属性，`body` 中用 `.frame(idealWidth:maxWidth:height:)` + `fixedSize` 替代硬固化 `.frame(width:height:)`。
+3. **排版层**：`MathDisplayCache.getDisplay` 签名增加 `maxWidth: CGFloat` 透传给 `createLineForMathList`，缓存 key 包含 `maxWidth`。
+4. **布局层**：`FlowLayout` 新增 `InlineFormulaKey`，`MarkdownRenderer+Inlines.swift` 中 inline LaTeX 附加该 key；`measuredSubview` 对超宽 inline LaTeX 强制 `width = maxWidth` 兜底。
+
+**关键发现**（契约审查补丁）：`RenderInlineFlowElement` 未向 `LaTeXView` 传入 `maxWidth`，导致 typesetter 始终收到 0。补充方案：`LaTeXView` 增加 `@State detectedWidth` + `GeometryReader` 检测 `LayoutWidthPreferenceKey`，算出 `effectiveMaxWidth = maxWidth ?? detectedWidth` 透传给 `MathView`。**端到端链路打通**：GeometryReader 检测 FlowLayout 约束宽度 → detectedWidth → effectiveMaxWidth → MathDisplayCache.getDisplay → createLineForMathList 内部换行。
+
+**影响范围**：
+- `LaTeXPreprocessor.swift`：`hasLaTeXCharacter(in:)` 新增方法，`findInlineMath`/`findDisplayMath` 增加校验。
+- `LaTeXView.swift`：`MathView.maxWidth`、`MathDisplayCache.getDisplay(maxWidth:)`、`LaTeXView.effectiveMaxWidth` + `GeometryReader` 检测。
+- `FlowLayout.swift`：`InlineFormulaKey` 新增，`measuredSubview` 超宽 inline 分支。
+- `MarkdownRenderer+Inlines.swift`：inline LaTeX 附加 `InlineFormulaKey`。
+
+**后续动作**：已全部实现并编译通过。测试侧仅有预先存在的 `codeHighlights` API 变更导致测试失败，与本次改动无关。
 
 ---
 
@@ -107,7 +152,33 @@
 
 **后续动作**：无。
 
+---
 
+### 2026-06-13 · Inline LaTeX 误识别导致布局崩坏（四层根因链 + 修复方案）
+
+**决策主题**：含 `$` 的普通文本（价格、Shell 变量等）被误识别为 LaTeX，MathView 硬覆盖 proposal 导致流式布局溢出。
+
+**根因**（四层叠加效应）：
+- **识别层**：`LaTeXPreprocessor.containsLaTeX` 仅判断 `text.contains("$")`，`$100`、`$HOME` 等被误判。
+- **视图层**：`MathView.frame(width: displayList.width + inkPadding)` 硬覆盖 proposal，无视 FlowLayout 约束。
+- **排版层**：`maxWidth: 0` 传入 `createLineForMathList`，公式内部不换行。
+- **布局层**：`.latex` 作为原子 FlowElement，不可拆分导致整段溢出。
+
+**最终修复方案**（四层联动）：
+1. **识别层**：`LaTeXPreprocessor` 新增 `hasLaTeXCharacter(in:)` 校验——内容不含 `\\ ^ _ { } + - * = > < /` 或非 ASCII 字符时放弃匹配（`findInlineMath` 和 `findDisplayMath` 均应用）。
+2. **视图层**：`MathView` 增加 `maxWidth: CGFloat?` 属性，`body` 中用 `.frame(idealWidth:maxWidth:height:)` + `fixedSize` 替代硬固化 `.frame(width:height:)`。
+3. **排版层**：`MathDisplayCache.getDisplay` 签名增加 `maxWidth: CGFloat` 透传给 `createLineForMathList`，缓存 key 包含 `maxWidth`。
+4. **布局层**：`FlowLayout` 新增 `InlineFormulaKey`，`MarkdownRenderer+Inlines.swift` 中 inline LaTeX 附加该 key；`measuredSubview` 对超宽 inline LaTeX 强制 `width = maxWidth` 兜底。
+
+**关键发现**（契约审查补丁）：`RenderInlineFlowElement` 未向 `LaTeXView` 传入 `maxWidth`，导致 typesetter 始终收到 0。补充方案：`LaTeXView` 增加 `@State detectedWidth` + `GeometryReader` 检测 `LayoutWidthPreferenceKey`，算出 `effectiveMaxWidth = maxWidth ?? detectedWidth` 透传给 `MathView`。**端到端链路打通**：GeometryReader 检测 FlowLayout 约束宽度 → detectedWidth → effectiveMaxWidth → MathDisplayCache.getDisplay → createLineForMathList 内部换行。
+
+**影响范围**：
+- `LaTeXPreprocessor.swift`：`hasLaTeXCharacter(in:)` 新增方法，`findInlineMath`/`findDisplayMath` 增加校验。
+- `LaTeXView.swift`：`MathView.maxWidth`、`MathDisplayCache.getDisplay(maxWidth:)`、`LaTeXView.effectiveMaxWidth` + `GeometryReader` 检测。
+- `FlowLayout.swift`：`InlineFormulaKey` 新增，`measuredSubview` 超宽 inline 分支。
+- `MarkdownRenderer+Inlines.swift`：inline LaTeX 附加 `InlineFormulaKey`。
+
+**后续动作**：已全部实现并编译通过。测试侧仅有预先存在的 `codeHighlights` API 变更导致测试失败，与本次改动无关。
 
 ---
 
@@ -133,7 +204,33 @@
 
 **后续动作**：无。
 
+---
 
+### 2026-06-13 · Inline LaTeX 误识别导致布局崩坏（四层根因链 + 修复方案）
+
+**决策主题**：含 `$` 的普通文本（价格、Shell 变量等）被误识别为 LaTeX，MathView 硬覆盖 proposal 导致流式布局溢出。
+
+**根因**（四层叠加效应）：
+- **识别层**：`LaTeXPreprocessor.containsLaTeX` 仅判断 `text.contains("$")`，`$100`、`$HOME` 等被误判。
+- **视图层**：`MathView.frame(width: displayList.width + inkPadding)` 硬覆盖 proposal，无视 FlowLayout 约束。
+- **排版层**：`maxWidth: 0` 传入 `createLineForMathList`，公式内部不换行。
+- **布局层**：`.latex` 作为原子 FlowElement，不可拆分导致整段溢出。
+
+**最终修复方案**（四层联动）：
+1. **识别层**：`LaTeXPreprocessor` 新增 `hasLaTeXCharacter(in:)` 校验——内容不含 `\\ ^ _ { } + - * = > < /` 或非 ASCII 字符时放弃匹配（`findInlineMath` 和 `findDisplayMath` 均应用）。
+2. **视图层**：`MathView` 增加 `maxWidth: CGFloat?` 属性，`body` 中用 `.frame(idealWidth:maxWidth:height:)` + `fixedSize` 替代硬固化 `.frame(width:height:)`。
+3. **排版层**：`MathDisplayCache.getDisplay` 签名增加 `maxWidth: CGFloat` 透传给 `createLineForMathList`，缓存 key 包含 `maxWidth`。
+4. **布局层**：`FlowLayout` 新增 `InlineFormulaKey`，`MarkdownRenderer+Inlines.swift` 中 inline LaTeX 附加该 key；`measuredSubview` 对超宽 inline LaTeX 强制 `width = maxWidth` 兜底。
+
+**关键发现**（契约审查补丁）：`RenderInlineFlowElement` 未向 `LaTeXView` 传入 `maxWidth`，导致 typesetter 始终收到 0。补充方案：`LaTeXView` 增加 `@State detectedWidth` + `GeometryReader` 检测 `LayoutWidthPreferenceKey`，算出 `effectiveMaxWidth = maxWidth ?? detectedWidth` 透传给 `MathView`。**端到端链路打通**：GeometryReader 检测 FlowLayout 约束宽度 → detectedWidth → effectiveMaxWidth → MathDisplayCache.getDisplay → createLineForMathList 内部换行。
+
+**影响范围**：
+- `LaTeXPreprocessor.swift`：`hasLaTeXCharacter(in:)` 新增方法，`findInlineMath`/`findDisplayMath` 增加校验。
+- `LaTeXView.swift`：`MathView.maxWidth`、`MathDisplayCache.getDisplay(maxWidth:)`、`LaTeXView.effectiveMaxWidth` + `GeometryReader` 检测。
+- `FlowLayout.swift`：`InlineFormulaKey` 新增，`measuredSubview` 超宽 inline 分支。
+- `MarkdownRenderer+Inlines.swift`：inline LaTeX 附加 `InlineFormulaKey`。
+
+**后续动作**：已全部实现并编译通过。测试侧仅有预先存在的 `codeHighlights` API 变更导致测试失败，与本次改动无关。
 
 ---
 
@@ -159,4 +256,30 @@
 
 **后续动作**：无。
 
+---
 
+### 2026-06-13 · Inline LaTeX 误识别导致布局崩坏（四层根因链 + 修复方案）
+
+**决策主题**：含 `$` 的普通文本（价格、Shell 变量等）被误识别为 LaTeX，MathView 硬覆盖 proposal 导致流式布局溢出。
+
+**根因**（四层叠加效应）：
+- **识别层**：`LaTeXPreprocessor.containsLaTeX` 仅判断 `text.contains("$")`，`$100`、`$HOME` 等被误判。
+- **视图层**：`MathView.frame(width: displayList.width + inkPadding)` 硬覆盖 proposal，无视 FlowLayout 约束。
+- **排版层**：`maxWidth: 0` 传入 `createLineForMathList`，公式内部不换行。
+- **布局层**：`.latex` 作为原子 FlowElement，不可拆分导致整段溢出。
+
+**最终修复方案**（四层联动）：
+1. **识别层**：`LaTeXPreprocessor` 新增 `hasLaTeXCharacter(in:)` 校验——内容不含 `\\ ^ _ { } + - * = > < /` 或非 ASCII 字符时放弃匹配（`findInlineMath` 和 `findDisplayMath` 均应用）。
+2. **视图层**：`MathView` 增加 `maxWidth: CGFloat?` 属性，`body` 中用 `.frame(idealWidth:maxWidth:height:)` + `fixedSize` 替代硬固化 `.frame(width:height:)`。
+3. **排版层**：`MathDisplayCache.getDisplay` 签名增加 `maxWidth: CGFloat` 透传给 `createLineForMathList`，缓存 key 包含 `maxWidth`。
+4. **布局层**：`FlowLayout` 新增 `InlineFormulaKey`，`MarkdownRenderer+Inlines.swift` 中 inline LaTeX 附加该 key；`measuredSubview` 对超宽 inline LaTeX 强制 `width = maxWidth` 兜底。
+
+**关键发现**（契约审查补丁）：`RenderInlineFlowElement` 未向 `LaTeXView` 传入 `maxWidth`，导致 typesetter 始终收到 0。补充方案：`LaTeXView` 增加 `@State detectedWidth` + `GeometryReader` 检测 `LayoutWidthPreferenceKey`，算出 `effectiveMaxWidth = maxWidth ?? detectedWidth` 透传给 `MathView`。**端到端链路打通**：GeometryReader 检测 FlowLayout 约束宽度 → detectedWidth → effectiveMaxWidth → MathDisplayCache.getDisplay → createLineForMathList 内部换行。
+
+**影响范围**：
+- `LaTeXPreprocessor.swift`：`hasLaTeXCharacter(in:)` 新增方法，`findInlineMath`/`findDisplayMath` 增加校验。
+- `LaTeXView.swift`：`MathView.maxWidth`、`MathDisplayCache.getDisplay(maxWidth:)`、`LaTeXView.effectiveMaxWidth` + `GeometryReader` 检测。
+- `FlowLayout.swift`：`InlineFormulaKey` 新增，`measuredSubview` 超宽 inline 分支。
+- `MarkdownRenderer+Inlines.swift`：inline LaTeX 附加 `InlineFormulaKey`。
+
+**后续动作**：已全部实现并编译通过。测试侧仅有预先存在的 `codeHighlights` API 变更导致测试失败，与本次改动无关。
