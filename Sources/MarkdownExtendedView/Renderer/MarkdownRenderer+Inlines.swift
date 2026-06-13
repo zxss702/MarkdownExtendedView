@@ -121,6 +121,7 @@ fileprivate struct RenderInlineFlowElement: View {
                     .layoutValue(key: BlockFormulaKey.self, value: true)
             } else {
                 LaTeXView(latex: latex, isBlock: false, theme: context.theme)
+                    .layoutValue(key: InlineFormulaKey.self, value: true)
             }
 
         case .lineBreak:

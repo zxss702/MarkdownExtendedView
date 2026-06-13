@@ -197,6 +197,7 @@ struct FlowLayout: Layout {
 
     private func measuredSubview(for subview: LayoutSubview, maxWidth: CGFloat) -> MeasuredSubview {
         let isBlockFormula = subview[BlockFormulaKey.self]
+        let isInlineFormula = subview[InlineFormulaKey.self]
         let unspecifiedProposal = ProposedViewSize(width: nil, height: nil)
         let unspecifiedSize = subview.sizeThatFits(unspecifiedProposal)
 
@@ -205,6 +206,10 @@ struct FlowLayout: Layout {
         if isBlockFormula {
             measurementProposal = ProposedViewSize(width: maxWidth, height: nil)
             size = CGSize(width: maxWidth, height: subview.sizeThatFits(measurementProposal).height)
+        } else if isInlineFormula, maxWidth.isFinite, unspecifiedSize.width > maxWidth {
+            measurementProposal = ProposedViewSize(width: maxWidth, height: nil)
+            let constrainedHeight = subview.sizeThatFits(measurementProposal).height
+            size = CGSize(width: maxWidth, height: constrainedHeight)
         } else if maxWidth.isFinite, unspecifiedSize.width > maxWidth {
             measurementProposal = ProposedViewSize(width: maxWidth, height: nil)
             size = subview.sizeThatFits(measurementProposal)
@@ -236,4 +241,8 @@ struct FlowLayout: Layout {
         // For non-text views, use vertical center as a neutral fallback.
         return size.height / 2
     }
+}
+
+struct InlineFormulaKey: LayoutValueKey {
+    static let defaultValue: Bool = false
 }

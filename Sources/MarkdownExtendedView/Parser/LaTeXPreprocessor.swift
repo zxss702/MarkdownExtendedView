@@ -100,6 +100,23 @@ nonisolated enum LaTeXPreprocessor {
         let endIndex: String.Index
     }
 
+    /// Check if content contains at least one LaTeX characteristic character.
+    private static func hasLaTeXCharacter(in content: String) -> Bool {
+        for character in content {
+            if character == "\\" || character == "^" || character == "_" ||
+                character == "{" || character == "}" ||
+                character == "+" || character == "-" || character == "*" ||
+                character == "=" || character == ">" || character == "<" ||
+                character == "/" {
+                return true
+            }
+            if let scalar = character.unicodeScalars.first, scalar.value > 127 {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Find display math ($$...$$) starting at the given index.
     private static func findDisplayMath(in text: String, from startIndex: String.Index) -> Match? {
         // Must start with "$$"
@@ -111,6 +128,7 @@ nonisolated enum LaTeXPreprocessor {
         // Find closing "$$"
         if let range = text.range(of: "$$", range: startPlus2..<text.endIndex) {
             let content = String(text[startPlus2..<range.lowerBound])
+            if !hasLaTeXCharacter(in: content) { return nil }
             return Match(content: content.trimmingCharacters(in: .whitespacesAndNewlines), endIndex: range.upperBound)
         }
         
@@ -167,6 +185,8 @@ nonisolated enum LaTeXPreprocessor {
             if content.isEmpty || content.contains(where: { $0.isNewline }) {
                 return nil
             }
+            
+            if !hasLaTeXCharacter(in: content) { return nil }
             
             return Match(content: content, endIndex: range.upperBound)
         }

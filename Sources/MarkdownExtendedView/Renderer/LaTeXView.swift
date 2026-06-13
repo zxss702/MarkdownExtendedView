@@ -7,14 +7,27 @@
 import SwiftUI
 import Synchronization
 
+struct LayoutWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// A view that renders LaTeX equations using SwiftMath.
 struct LaTeXView: View {
 
     let latex: String
     let isBlock: Bool
     let theme: MarkdownTheme
+    var maxWidth: CGFloat? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var detectedWidth: CGFloat? = nil
+
+    private var effectiveMaxWidth: CGFloat? {
+        maxWidth ?? detectedWidth
+    }
 
     var body: some View {
         if isBlock {
@@ -28,12 +41,23 @@ struct LaTeXView: View {
         } else {
             // Inline math - flows with text
             mathView
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(key: LayoutWidthPreferenceKey.self, value: geo.size.width)
+                    }
+                )
+                .onPreferenceChange(LayoutWidthPreferenceKey.self) { width in
+                    if maxWidth == nil && width > 0 {
+                        detectedWidth = width
+                    }
+                }
         }
     }
 
     @ViewBuilder
     private var mathView: some View {
-        MathView(latex: latex)
+        MathView(latex: latex, maxWidth: effectiveMaxWidth)
             .labelMode(isBlock ? .display : .text)
             .font(fontSize: isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
             .foregroundColor(textColor)
@@ -64,8 +88,8 @@ final class MathDisplayCache: @unchecked Sendable {
     static let shared = MathDisplayCache()
     private let cache = Mutex<[String: MTMathListDisplay]>([:])
 
-    func getDisplay(latex: String, fontSize: CGFloat, isBlock: Bool) -> MTMathListDisplay? {
-        let key = "\(latex)_\(fontSize)_\(isBlock)"
+    func getDisplay(latex: String, fontSize: CGFloat, isBlock: Bool, maxWidth: CGFloat = 0) -> MTMathListDisplay? {
+        let key = "\(latex)_\(fontSize)_\(isBlock)_\(maxWidth)"
         
         if let display = cache.withLock({ $0[key] }) {
             return display
@@ -78,7 +102,7 @@ final class MathDisplayCache: @unchecked Sendable {
         }
         
         let style: MTLineStyle = isBlock ? .display : .text
-        if let displayList = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: 0) {
+        if let displayList = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: maxWidth) {
             cache.withLock { $0[key] = displayList }
             return displayList
         }
@@ -94,9 +118,15 @@ struct MathView: View {
     var fontSize: CGFloat = 16
     var textColor: MTColor = .black
     var labelMode: MTMathUILabelMode = .display
+    var maxWidth: CGFloat? = nil
 
     private var displayList: MTMathListDisplay? {
-        MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fontSize, isBlock: labelMode == .display)
+        MathDisplayCache.shared.getDisplay(
+            latex: latex,
+            fontSize: fontSize,
+            isBlock: labelMode == .display,
+            maxWidth: maxWidth ?? 0
+        )
     }
     
     // Padding to prevent clipping of tall ink bounds (e.g., italic L, integrals)
@@ -120,7 +150,15 @@ struct MathView: View {
                     displayList.draw(cgContext)
                 }
             }
-            .frame(width: displayList.width + inkPadding, height: displayList.ascent + displayList.descent + inkPadding)
+            .frame(
+                minWidth: maxWidth != nil ? nil : (displayList.width + inkPadding),
+                idealWidth: displayList.width + inkPadding,
+                maxWidth: maxWidth ?? (displayList.width + inkPadding),
+                minHeight: maxWidth != nil ? nil : (displayList.ascent + displayList.descent + inkPadding),
+                idealHeight: nil,
+                maxHeight: displayList.ascent + displayList.descent + inkPadding
+            )
+            .fixedSize(horizontal: maxWidth == nil, vertical: true)
             .anchorPreference(key: FormulaSelectionKey.self, value: .bounds) { bounds in
                 [FormulaSelectionData(latex: "$\(latex)$", bounds: bounds)]
             }
@@ -149,6 +187,12 @@ struct MathView: View {
     func labelMode(_ mode: MTMathUILabelMode) -> MathView {
         var view = self
         view.labelMode = mode
+        return view
+    }
+
+    func maxWidth(_ w: CGFloat?) -> MathView {
+        var view = self
+        view.maxWidth = w
         return view
     }
 }
