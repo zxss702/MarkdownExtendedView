@@ -37,8 +37,7 @@ public struct HighlightedCodeView: View {
             if let resolvedLines {
                 buildText(from: resolvedLines)
             } else {
-                SwiftUI.Text(code.trimmingCharacters(in: .newlines))
-                    .foregroundColor(theme.textColor)
+                buildPlainCodeText()
             }
         }
         .font(theme.codeBlockSwiftUIFont)
@@ -84,6 +83,21 @@ public struct HighlightedCodeView: View {
                     }
                 }
             }
+        }
+        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
+    }
+    
+    private func buildPlainCodeText() -> SwiftUI.Text {
+        var combinedAttr = AttributedString()
+        let plainString = code.trimmingCharacters(in: .newlines)
+        var offset = 0
+        var mappings: [GlobalSelectionCache.CharacterMapping] = []
+        for char in plainString {
+            var charAttr = AttributedString(String(char))
+            charAttr.foregroundColor = theme.textColor
+            combinedAttr.append(charAttr)
+            mappings.append(.init(index: offset, char: String(char)))
+            offset += 1
         }
         return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
     }
