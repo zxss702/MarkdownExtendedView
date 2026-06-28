@@ -128,7 +128,8 @@ struct MarkdownTextBuilder {
     /// This is the CORRECT way to set TextAttribute values so they survive to TextRenderer.
     private func styledText(_ string: String, style: InlineTextStyle) -> SwiftUI.Text {
         let baseFont = self.baseFont ?? theme.bodySwiftUIFont
-        var result = SwiftUI.Text("")
+        var pieces: [SwiftUI.Text] = []
+        pieces.reserveCapacity(string.count)
         
         for char in string {
             var charAttr = AttributedString(String(char))
@@ -146,17 +147,38 @@ struct MarkdownTextBuilder {
             let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: tracker.offset, char: String(char)))
             
             tracker.offset += 1
-            result = result + piece
+            pieces.append(piece)
         }
         
-        return result
+        return combineTexts(pieces)
+    }
+    
+    /// Combine an array of SwiftUI.Text into a balanced tree to prevent stack overflows
+    /// when rendering extremely long text (which causes O(N) recursion in SwiftUI's resolve).
+    private func combineTexts(_ texts: [SwiftUI.Text]) -> SwiftUI.Text {
+        guard !texts.isEmpty else { return SwiftUI.Text("") }
+        var current = texts
+        while current.count > 1 {
+            var next: [SwiftUI.Text] = []
+            next.reserveCapacity((current.count + 1) / 2)
+            for i in stride(from: 0, to: current.count, by: 2) {
+                if i + 1 < current.count {
+                    next.append(current[i] + current[i + 1])
+                } else {
+                    next.append(current[i])
+                }
+            }
+            current = next
+        }
+        return current[0]
     }
     
     /// Build styled link text using Text concatenation with .customAttribute().
     private func styledLinkText(_ link: Markdown.Link, style: InlineTextStyle) -> SwiftUI.Text {
         let plainText = extractPlainText(from: link)
         let baseFont = self.baseFont ?? theme.bodySwiftUIFont
-        var result = SwiftUI.Text("")
+        var pieces: [SwiftUI.Text] = []
+        pieces.reserveCapacity(plainText.count)
         
         for char in plainText {
             var charAttr = AttributedString(String(char))
@@ -175,11 +197,12 @@ struct MarkdownTextBuilder {
             }
             
             let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: tracker.offset, char: String(char)))
+            
             tracker.offset += 1
-            result = result + piece
+            pieces.append(piece)
         }
         
-        return result
+        return combineTexts(pieces)
     }
     
     private func extractPlainText(from markup: any Markup) -> String {
