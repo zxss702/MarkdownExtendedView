@@ -25,7 +25,8 @@ struct GlobalCharacter: Equatable {
 }
 
 struct SelectableModifier: ViewModifier {
-    @Environment(\.globalSelectionCache) private var selectionCache
+    
+    @State var selectionCache = GlobalSelectionCache()
     
     @State private var resolvedLayouts: [ResolvedLayout] = []
     @FocusState private var isFocused: Bool
@@ -221,6 +222,7 @@ struct SelectableModifier: ViewModifier {
                 )
             )
 #endif
+            .environment(selectionCache)
     }
     
     private func copyToPasteboard(_ text: String) {
@@ -241,26 +243,30 @@ public extension View {
 }
 
 public struct MakeTextSelectable: ViewModifier {
-    @Environment(\.globalSelectionCache) private var selectionCache
+    @Environment(GlobalSelectionCache.self) private var selectionCache: GlobalSelectionCache?
     @State private var blockId = UUID()
 
     public let isBlock: Bool // True for latex blocks, mermaid, etc. False for normal text.
     public let blockText: String // Optional text for block-level selection copying
     
     public func body(content: Content) -> some View {
-        if isBlock {
-            content
-                .pointerStyle(.horizontalText)
-                .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
-                    [MarkdownLayout(blockId: blockId, bounds: bounds, isBlock: isBlock, blockText: blockText)]
-                }
+        if let selectionCache {
+            if isBlock {
+                content
+                    .pointerStyle(.horizontalText)
+                    .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
+                        [MarkdownLayout(blockId: blockId, bounds: bounds, isBlock: isBlock, blockText: blockText)]
+                    }
+            } else {
+                content
+                    .textRenderer(SelectionLayoutTextRenderer(cache: selectionCache, blockId: blockId))
+                    .pointerStyle(.horizontalText)
+                    .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
+                        [MarkdownLayout(blockId: blockId, bounds: bounds, isBlock: isBlock, blockText: blockText)]
+                    }
+            }
         } else {
             content
-                .textRenderer(SelectionLayoutTextRenderer(cache: selectionCache, blockId: blockId))
-                .pointerStyle(.horizontalText)
-                .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
-                    [MarkdownLayout(blockId: blockId, bounds: bounds, isBlock: isBlock, blockText: blockText)]
-                }
         }
         
     }

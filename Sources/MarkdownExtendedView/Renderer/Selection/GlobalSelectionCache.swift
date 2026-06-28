@@ -18,31 +18,34 @@ public struct MarkdownCharacterAttribute: TextAttribute, Equatable, Hashable {
 import Observation
 
 @Observable
-public class GlobalSelectionCache: @unchecked Sendable {
+public class GlobalSelectionCache {
+    
+//    @MainActor static let share = GlobalSelectionCache()
+    
     public struct CharacterBounds: Equatable, Sendable {
         public let index: Int
         public let char: String
         public let rect: CGRect // In LOCAL coordinates of the Text view
     }
     
-    @MainActor public var runs: [UUID: [CharacterBounds]] = [:]
+    @ObservationIgnored public var runs: [UUID: [CharacterBounds]] = [:]
     
     public init() {}
 }
 
-public struct GlobalSelectionCacheEnvironmentKey: EnvironmentKey {
-    public static let defaultValue: GlobalSelectionCache = GlobalSelectionCache()
-}
+//public struct GlobalSelectionCacheEnvironmentKey: EnvironmentKey {
+//    public static let defaultValue: GlobalSelectionCache = GlobalSelectionCache()
+//}
+//
+//public extension EnvironmentValues {
+//    var globalSelectionCache: GlobalSelectionCache {
+//        get { self[GlobalSelectionCacheEnvironmentKey.self] }
+//        set { self[GlobalSelectionCacheEnvironmentKey.self] = newValue }
+//    }
+//}
 
-public extension EnvironmentValues {
-    var globalSelectionCache: GlobalSelectionCache {
-        get { self[GlobalSelectionCacheEnvironmentKey.self] }
-        set { self[GlobalSelectionCacheEnvironmentKey.self] = newValue }
-    }
-}
-
-@available(macOS 15.0, iOS 18.0, *)
-public struct SelectionLayoutTextRenderer: TextRenderer {
+@MainActor
+public struct SelectionLayoutTextRenderer: @MainActor TextRenderer {
     let cache: GlobalSelectionCache
     let blockId: UUID
     
@@ -57,11 +60,9 @@ public struct SelectionLayoutTextRenderer: TextRenderer {
             }
         }
         
-        Task { @MainActor [cache, blockId] in
-            let current = cache.runs[blockId] ?? []
-            if current != extractedBounds {
-                cache.runs[blockId] = extractedBounds
-            }
+        let current = cache.runs[blockId] ?? []
+        if current != extractedBounds {
+            cache.runs[blockId] = extractedBounds
         }
         
         // Draw normally

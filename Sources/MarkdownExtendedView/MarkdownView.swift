@@ -48,7 +48,7 @@ public struct MarkdownView: View, @MainActor Equatable {
     }
 
     // MARK: - Body
-
+    
     public var body: some View {
         MarkdownRenderer(snapshot: snapshot, isLazy: isLazy)
 //            .lineLimit(nil)
