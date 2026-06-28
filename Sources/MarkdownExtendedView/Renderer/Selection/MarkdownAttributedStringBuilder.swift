@@ -18,24 +18,64 @@ struct MarkdownTextBuilder {
     var baseFont: Font? = nil
     var baseFontSize: CGFloat? = nil
     
+    // Keep track of the character index for the entire paragraph and buffer strings
+    private class BuilderState {
+        var offset: Int = 0
+        var mappings: [GlobalSelectionCache.CharacterMapping] = []
+        var currentAttrString = AttributedString()
+        var pieces: [SwiftUI.Text] = []
+        
+        func flush() {
+            if !currentAttrString.characters.isEmpty {
+                pieces.append(SwiftUI.Text(currentAttrString))
+                currentAttrString = AttributedString()
+            }
+        }
+        
+        func appendImageText(_ text: SwiftUI.Text) {
+            flush()
+            pieces.append(text)
+        }
+        
+        func buildFinalText() -> SwiftUI.Text {
+            flush()
+            guard !pieces.isEmpty else { return SwiftUI.Text("") }
+            
+            var current = pieces
+            while current.count > 1 {
+                var next: [SwiftUI.Text] = []
+                next.reserveCapacity((current.count + 1) / 2)
+                for i in stride(from: 0, to: current.count, by: 2) {
+                    if i + 1 < current.count {
+                        next.append(current[i] + current[i + 1])
+                    } else {
+                        next.append(current[i])
+                    }
+                }
+                current = next
+            }
+            return current[0].customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
+        }
+    }
+    private let state = BuilderState()
+    
     func build(from markup: any Markup) -> SwiftUI.Text {
-        // We first convert to plain text to check for LaTeX
         let plainText = extractPlainText(from: markup)
         if LaTeXPreprocessor.containsLaTeX(plainText) {
             let segments = LaTeXPreprocessor.extractSegments(from: plainText)
-            return buildText(from: segments)
+            buildText(from: segments)
+        } else {
+            buildTextFromChildren(markup, style: .init())
         }
         
-        // Otherwise, render normally
-        return buildTextFromChildren(markup, style: .init())
+        return state.buildFinalText()
     }
     
-    private func buildText(from segments: [LaTeXPreprocessor.Segment]) -> SwiftUI.Text {
-        var result = SwiftUI.Text("")
+    private func buildText(from segments: [LaTeXPreprocessor.Segment]) {
         for segment in segments {
             switch segment {
             case .text(let text):
-                result = result + styledText(text, style: .init())
+                styledText(text, style: .init())
                 
             case .latex(let latex, _):
                 // Render inline latex to Image
@@ -63,73 +103,58 @@ struct MarkdownTextBuilder {
                     imageText = SwiftUI.Text("$\(latex)$")
                 }
                 
-                imageText = imageText.customAttribute(MarkdownCharacterAttribute(index: tracker.offset, char: "$\(latex)$"))
+                state.mappings.append(.init(index: state.offset, char: "$\(latex)$"))
+                state.offset += "$\(latex)$".count
                 
-                tracker.offset += "$\(latex)$".count
-                
-                result = result + imageText
+                state.appendImageText(imageText)
             }
         }
-        return result
     }
     
-    private func buildTextFromChildren(_ parent: any Markup, style: InlineTextStyle) -> SwiftUI.Text {
-        var result = SwiftUI.Text("")
+    private func buildTextFromChildren(_ parent: any Markup, style: InlineTextStyle) {
         for child in parent.children {
-            result = result + renderInlineElement(child, style: style)
+            renderInlineElement(child, style: style)
         }
-        return result
     }
     
-    private func renderInlineElement(_ element: any Markup, style: InlineTextStyle) -> SwiftUI.Text {
+    private func renderInlineElement(_ element: any Markup, style: InlineTextStyle) {
         switch element {
         case let text as Markdown.Text:
-            return styledText(text.string, style: style)
+            styledText(text.string, style: style)
             
         case let strong as Strong:
-            return buildTextFromChildren(strong, style: style.union(.bold))
+            buildTextFromChildren(strong, style: style.union(.bold))
             
         case let emphasis as Emphasis:
-            return buildTextFromChildren(emphasis, style: style.union(.italic))
+            buildTextFromChildren(emphasis, style: style.union(.italic))
             
         case let strikethrough as Strikethrough:
-            return buildTextFromChildren(strikethrough, style: style.union(.strikethrough))
+            buildTextFromChildren(strikethrough, style: style.union(.strikethrough))
             
         case let code as InlineCode:
-            return styledText(code.code, style: style.union(.code))
+            styledText(code.code, style: style.union(.code))
             
         case let link as Markdown.Link:
-            return styledLinkText(link, style: style)
+            styledLinkText(link, style: style)
             
         case _ as SoftBreak:
-            return styledText("\n", style: style)
+            styledText("\n", style: style)
             
         case _ as LineBreak:
-            return styledText("\n", style: style)
+            styledText("\n", style: style)
             
         case let image as Markdown.Image:
-            return styledText("[\(image.plainText)]", style: style).foregroundColor(theme.secondaryTextColor)
+            styledText("[\(image.plainText)]", style: style, color: theme.secondaryTextColor)
             
         default:
             if let plainText = element as? any PlainTextConvertibleMarkup {
-                return styledText(plainText.plainText, style: style)
+                styledText(plainText.plainText, style: style)
             }
-            return SwiftUI.Text("")
         }
     }
     
-    // Keep track of the character index for the entire paragraph
-    private class IndexTracker {
-        var offset: Int = 0
-    }
-    private let tracker = IndexTracker()
-    
-    /// Build styled text using Text concatenation with .customAttribute() for each character.
-    /// This is the CORRECT way to set TextAttribute values so they survive to TextRenderer.
-    private func styledText(_ string: String, style: InlineTextStyle) -> SwiftUI.Text {
+    private func styledText(_ string: String, style: InlineTextStyle, color: Color? = nil) {
         let baseFont = self.baseFont ?? theme.bodySwiftUIFont
-        var pieces: [SwiftUI.Text] = []
-        pieces.reserveCapacity(string.count)
         
         for char in string {
             var charAttr = AttributedString(String(char))
@@ -142,43 +167,17 @@ struct MarkdownTextBuilder {
                 if style.contains(.italic) { charAttr.font = charAttr.font?.italic() }
             }
             if style.contains(.strikethrough) { charAttr.strikethroughStyle = .single }
-            charAttr.foregroundColor = theme.textColor
+            charAttr.foregroundColor = color ?? theme.textColor
             
-            let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: tracker.offset, char: String(char)))
-            
-            tracker.offset += 1
-            pieces.append(piece)
+            state.mappings.append(.init(index: state.offset, char: String(char)))
+            state.offset += 1
+            state.currentAttrString.append(charAttr)
         }
-        
-        return combineTexts(pieces)
     }
     
-    /// Combine an array of SwiftUI.Text into a balanced tree to prevent stack overflows
-    /// when rendering extremely long text (which causes O(N) recursion in SwiftUI's resolve).
-    private func combineTexts(_ texts: [SwiftUI.Text]) -> SwiftUI.Text {
-        guard !texts.isEmpty else { return SwiftUI.Text("") }
-        var current = texts
-        while current.count > 1 {
-            var next: [SwiftUI.Text] = []
-            next.reserveCapacity((current.count + 1) / 2)
-            for i in stride(from: 0, to: current.count, by: 2) {
-                if i + 1 < current.count {
-                    next.append(current[i] + current[i + 1])
-                } else {
-                    next.append(current[i])
-                }
-            }
-            current = next
-        }
-        return current[0]
-    }
-    
-    /// Build styled link text using Text concatenation with .customAttribute().
-    private func styledLinkText(_ link: Markdown.Link, style: InlineTextStyle) -> SwiftUI.Text {
+    private func styledLinkText(_ link: Markdown.Link, style: InlineTextStyle) {
         let plainText = extractPlainText(from: link)
         let baseFont = self.baseFont ?? theme.bodySwiftUIFont
-        var pieces: [SwiftUI.Text] = []
-        pieces.reserveCapacity(plainText.count)
         
         for char in plainText {
             var charAttr = AttributedString(String(char))
@@ -196,13 +195,10 @@ struct MarkdownTextBuilder {
                 charAttr.link = url
             }
             
-            let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: tracker.offset, char: String(char)))
-            
-            tracker.offset += 1
-            pieces.append(piece)
+            state.mappings.append(.init(index: state.offset, char: String(char)))
+            state.offset += 1
+            state.currentAttrString.append(charAttr)
         }
-        
-        return combineTexts(pieces)
     }
     
     private func extractPlainText(from markup: any Markup) -> String {

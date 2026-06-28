@@ -171,7 +171,8 @@ fileprivate struct RenderInlineFlowElement: View {
     
     private func buildSelectableText(_ text: String, style: InlineTextStyle) -> SwiftUI.Text {
         let baseFont = self.baseFont ?? theme.bodySwiftUIFont
-        var result = SwiftUI.Text("")
+        var combinedAttr = AttributedString()
+        var mappings: [GlobalSelectionCache.CharacterMapping] = []
         
         for (i, char) in text.enumerated() {
             var charAttr = AttributedString(String(char))
@@ -186,11 +187,11 @@ fileprivate struct RenderInlineFlowElement: View {
             if style.contains(.strikethrough) { charAttr.strikethroughStyle = .single }
             charAttr.foregroundColor = theme.textColor
             
-            let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: i, char: String(char)))
-            result = result + piece
+            combinedAttr.append(charAttr)
+            mappings.append(.init(index: i, char: String(char)))
         }
         
-        return result
+        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
     }
 }
 

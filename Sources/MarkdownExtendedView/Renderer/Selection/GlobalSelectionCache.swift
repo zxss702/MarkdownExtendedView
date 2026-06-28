@@ -3,17 +3,16 @@
 
 import SwiftUI
 
-// MarkdownCharacterAttribute: Only needs TextAttribute conformance.
-// Set via Text.customAttribute(), read via run[MarkdownCharacterAttribute.self] in TextRenderer.
-@available(macOS 15.0, iOS 18.0, *)
-public struct MarkdownCharacterAttribute: TextAttribute, Equatable, Hashable {
-    public let index: Int
-    public let char: String
-    public init(index: Int, char: String) {
-        self.index = index
-        self.char = char
+public struct MarkdownBlockMappingsAttribute: TextAttribute, Equatable, Hashable {
+    public typealias Value = MarkdownBlockMappingsAttribute
+    public static let name = "MarkdownBlockMappingsAttribute"
+    
+    public let mappings: [GlobalSelectionCache.CharacterMapping]
+    public init(mappings: [GlobalSelectionCache.CharacterMapping]) {
+        self.mappings = mappings
     }
 }
+
 
 import Observation
 
@@ -26,6 +25,15 @@ public class GlobalSelectionCache {
         public let index: Int
         public let char: String
         public let rect: CGRect // In LOCAL coordinates of the Text view
+    }
+    
+    public struct CharacterMapping: Equatable, Hashable, Sendable {
+        public let index: Int
+        public let char: String
+        public init(index: Int, char: String) {
+            self.index = index
+            self.char = char
+        }
     }
     
     @ObservationIgnored public var runs: [UUID: [CharacterBounds]] = [:]
@@ -55,11 +63,18 @@ public struct SelectionLayoutTextRenderer: @MainActor TextRenderer {
     
     public func draw(layout: Text.Layout, in context: inout GraphicsContext) {
         var extractedBounds: [GlobalSelectionCache.CharacterBounds] = []
+        var sliceIndex = 0
         
         for line in layout {
             for run in line {
-                if let charData = run[MarkdownCharacterAttribute.self] {
-                    extractedBounds.append(.init(index: charData.index, char: charData.char, rect: run.typographicBounds.rect))
+                if let mappingsAttr = run[MarkdownBlockMappingsAttribute.self] {
+                    for slice in run {
+                        if sliceIndex < mappingsAttr.mappings.count {
+                            let mapping = mappingsAttr.mappings[sliceIndex]
+                            extractedBounds.append(.init(index: mapping.index, char: mapping.char, rect: slice.typographicBounds.rect))
+                        }
+                        sliceIndex += 1
+                    }
                 }
             }
         }

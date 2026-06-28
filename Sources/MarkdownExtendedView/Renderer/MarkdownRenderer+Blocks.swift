@@ -154,18 +154,19 @@ struct RenderRegularCodeBlock: View {
     }
     
     private func buildPlainCodeText() -> SwiftUI.Text {
-        var combinedText = SwiftUI.Text("")
+        var combinedAttr = AttributedString()
         let plainString = codeBlock.code.trimmingCharacters(in: .newlines)
         var offset = 0
+        var mappings: [GlobalSelectionCache.CharacterMapping] = []
         for char in plainString {
             var charAttr = AttributedString(String(char))
             charAttr.font = theme.codeBlockSwiftUIFont
             charAttr.foregroundColor = theme.textColor
-            let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
-            combinedText = combinedText + piece
+            combinedAttr.append(charAttr)
+            mappings.append(.init(index: offset, char: String(char)))
             offset += 1
         }
-        return combinedText
+        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
     }
 }
 

@@ -62,31 +62,30 @@ public struct HighlightedCodeView: View {
     }
     
     private func buildText(from lines: [[Token]]) -> SwiftUI.Text {
-        var combinedText = SwiftUI.Text("")
+        var combinedAttr = AttributedString()
         var offset = 0
+        var mappings: [GlobalSelectionCache.CharacterMapping] = []
         
         for (index, line) in lines.enumerated() {
             if index > 0 {
-                let nl = SwiftUI.Text("\n").customAttribute(MarkdownCharacterAttribute(index: offset, char: "\n"))
-                combinedText = combinedText + nl
+                combinedAttr.append(AttributedString("\n"))
+                mappings.append(.init(index: offset, char: "\n"))
                 offset += 1
             }
-            if line.isEmpty {
-                // Not adding space for empty line, just newline which we already added
-            } else {
+            if !line.isEmpty {
                 for token in line {
                     let color = Self.color(for: token.type, theme: theme)
                     for char in token.text {
                         var charAttr = AttributedString(String(char))
                         charAttr.foregroundColor = color
-                        let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
-                        combinedText = combinedText + piece
+                        combinedAttr.append(charAttr)
+                        mappings.append(.init(index: offset, char: String(char)))
                         offset += 1
                     }
                 }
             }
         }
-        return combinedText
+        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
     }
 
     private static func color(for tokenType: TokenType, theme: MarkdownTheme) -> Color {
