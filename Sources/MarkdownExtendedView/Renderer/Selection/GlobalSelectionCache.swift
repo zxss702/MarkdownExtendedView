@@ -30,6 +30,10 @@ public class GlobalSelectionCache {
     
     @ObservationIgnored public var runs: [UUID: [CharacterBounds]] = [:]
     
+    @ObservationIgnored var resolvedLayouts: [ResolvedLayout] = []
+    
+    @ObservationIgnored var globalCharacters: [GlobalCharacter] = []
+    
     public init() {}
 }
 

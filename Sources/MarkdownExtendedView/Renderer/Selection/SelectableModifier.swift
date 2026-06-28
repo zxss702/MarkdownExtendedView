@@ -28,16 +28,13 @@ struct SelectableModifier: ViewModifier {
     
     @State var selectionCache = GlobalSelectionCache()
     
-    @State private var resolvedLayouts: [ResolvedLayout] = []
     @FocusState private var isFocused: Bool
     
-    @State var globalCharacters: [GlobalCharacter] = []
-    
-    func updateGlobalCharacters() {
+    func updateglobalCharacters() {
         var chars: [GlobalCharacter] = []
         
         // 1. 按 midY 排序 (行间)
-        let sortedLayouts = resolvedLayouts.sorted { $0.rect.midY < $1.rect.midY }
+        let sortedLayouts = selectionCache.resolvedLayouts.sorted { $0.rect.midY < $1.rect.midY }
         
         // 2. 分组为行 (midY 差值 < 8 视为同一行)
         var lines: [[ResolvedLayout]] = []
@@ -99,19 +96,19 @@ struct SelectableModifier: ViewModifier {
             }
         }
         
-        self.globalCharacters = chars
+        self.selectionCache.globalCharacters = chars
     }
     
     /// 返回距离 point 最近的文本插入索引 (0...characters.count)
     func closestCharacterIndex(to point: CGPoint) -> Int? {
-        guard !globalCharacters.isEmpty else { return nil }
+        guard !selectionCache.globalCharacters.isEmpty else { return nil }
         
         var bestIndex = 0
         var bestDistSq: CGFloat = .infinity
         var bestCharLeft: CGFloat = 0
         
         // 遍历所有字符，找到点到矩形距离最短的那个
-        for (i, char) in globalCharacters.enumerated() where char.globalRect.minY < point.y {
+        for (i, char) in selectionCache.globalCharacters.enumerated() where char.globalRect.minY < point.y {
             let rect = char.globalRect
             
             // 计算点到矩形的最短距离（平方）
@@ -143,10 +140,10 @@ struct SelectableModifier: ViewModifier {
                 GeometryReader { proxy in
                     Color.clear
                         .task(id: layouts) {
-                            resolvedLayouts = layouts.map {
+                            selectionCache.resolvedLayouts = layouts.map {
                                 ResolvedLayout(blockId: $0.blockId, rect: proxy[$0.bounds], isBlock: $0.isBlock, blockText: $0.blockText)
                             }
-                            updateGlobalCharacters()
+                            updateglobalCharacters()
                         }
                 }
             }
@@ -154,7 +151,7 @@ struct SelectableModifier: ViewModifier {
                 if let range = selectedRange {
                     Path { path in
                         for i in range {
-                            let rect = globalCharacters[i].globalRect
+                            let rect = selectionCache.globalCharacters[i].globalRect
                             if rect.width > 0 {
                                 path.addPath(Path(roundedRect: rect.insetBy(dx: -1, dy: -1), cornerRadius: 1, style: .continuous))
                             }
@@ -175,11 +172,11 @@ struct SelectableModifier: ViewModifier {
                         let start = value.startLocation
                         let current = value.location
                         
-                        if globalCharacters.isEmpty {
-                            updateGlobalCharacters()
+                        if selectionCache.globalCharacters.isEmpty {
+                            updateglobalCharacters()
                         }
                         
-                        guard !globalCharacters.isEmpty else {
+                        guard !selectionCache.globalCharacters.isEmpty else {
                             selectedRange = nil
                             return
                         }
@@ -200,11 +197,11 @@ struct SelectableModifier: ViewModifier {
                 WindowDeselectHandler(
                     onDeselect: {
                         selectedRange = nil
-                        globalCharacters = []
+                        selectionCache.globalCharacters = []
                     },
                     onCopy: {
                         if let range = selectedRange {
-                            let selectedText = globalCharacters[range].map { $0.char }.joined()
+                            let selectedText = selectionCache.globalCharacters[range].map { $0.char }.joined()
                             if !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 let pasteboard = NSPasteboard.general
                                 pasteboard.clearContents()
