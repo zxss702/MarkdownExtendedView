@@ -98,14 +98,19 @@ extension MathImage {
             return (nil, image, LayoutInfo(ascent: displayList.ascent, descent: displayList.descent))
         #endif
         #if os(macOS)
-            let image = NSImage(size: size, flipped: false) { bounds in
-                guard let context = NSGraphicsContext.current?.cgContext else { return false }
-                context.saveGState()
+            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+            if let context = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: bitmapInfo) {
+                context.scaleBy(x: scale, y: scale)
                 displayList.draw(context)
-                context.restoreGState()
-                return true
+                if let cgImage = context.makeImage() {
+                    let image = NSImage(cgImage: cgImage, size: size)
+                    return (nil, image, LayoutInfo(ascent: displayList.ascent, descent: displayList.descent))
+                }
             }
-            return (nil, image, LayoutInfo(ascent: displayList.ascent, descent: displayList.descent))
+            return (nil, nil, nil)
+
         #endif
     }
 }

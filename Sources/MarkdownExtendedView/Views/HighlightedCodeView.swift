@@ -63,15 +63,26 @@ public struct HighlightedCodeView: View {
     
     private func buildText(from lines: [[Token]]) -> SwiftUI.Text {
         var combinedText = SwiftUI.Text("")
+        var offset = 0
+        
         for (index, line) in lines.enumerated() {
             if index > 0 {
-                combinedText = combinedText + SwiftUI.Text("\n")
+                var nl = SwiftUI.Text("\n").customAttribute(MarkdownCharacterAttribute(index: offset, char: "\n"))
+                combinedText = combinedText + nl
+                offset += 1
             }
             if line.isEmpty {
-                combinedText = combinedText + SwiftUI.Text(" ")
+                // Not adding space for empty line, just newline which we already added
             } else {
                 for token in line {
-                    combinedText = combinedText + SwiftUI.Text(token.text).foregroundColor(Self.color(for: token.type, theme: theme))
+                    let color = Self.color(for: token.type, theme: theme)
+                    for char in token.text {
+                        var charAttr = AttributedString(String(char))
+                        charAttr.foregroundColor = color
+                        var piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
+                        combinedText = combinedText + piece
+                        offset += 1
+                    }
                 }
             }
         }
@@ -150,11 +161,9 @@ private extension View {
     func codeSelectionTextPassThrough() -> some View {
 #if os(macOS)
         self
-            .allowsHitTesting(false)
             .pointerStyle(.horizontalText)
 #else
         self
-            .allowsHitTesting(false)
 #endif
     }
 }

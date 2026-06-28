@@ -21,6 +21,7 @@ struct LaTeXView: View {
     let isBlock: Bool
     let theme: MarkdownTheme
     var maxWidth: CGFloat? = nil
+    var overrideFontSize: CGFloat? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var detectedWidth: CGFloat? = nil
@@ -57,12 +58,14 @@ struct LaTeXView: View {
 
     @ViewBuilder
     private var mathView: some View {
+        let ascent = calculatedAscent
+        let fSize = overrideFontSize ?? (isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
         MathView(latex: latex, maxWidth: effectiveMaxWidth)
             .labelMode(isBlock ? .display : .text)
-            .font(fontSize: isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
+            .font(fontSize: fSize)
             .foregroundColor(textColor)
             .alignmentGuide(.firstTextBaseline) { _ in
-                calculatedAscent
+                ascent
             }
     }
 
@@ -75,7 +78,7 @@ struct LaTeXView: View {
     }
 
     private var calculatedAscent: CGFloat {
-        let fSize = isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize
+        let fSize = overrideFontSize ?? (isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
         let displayList = MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fSize, isBlock: isBlock)
         // Add half of the inkPadding (which is 8, so 4) to shift the baseline down properly.
         return (displayList?.ascent ?? 0) + 4
@@ -159,14 +162,13 @@ struct MathView: View {
                 maxHeight: displayList.ascent + displayList.descent + inkPadding
             )
             .fixedSize(horizontal: maxWidth == nil, vertical: true)
-            .anchorPreference(key: FormulaSelectionKey.self, value: .bounds) { bounds in
-                [FormulaSelectionData(latex: "$\(latex)$", bounds: bounds)]
-            }
+            .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
         } else {
             // Fallback for parsing errors
             Text(latex)
                 .font(.system(size: fontSize))
                 .foregroundColor(Color(textColor))
+                .makeCanSelectable()
         }
     }
 

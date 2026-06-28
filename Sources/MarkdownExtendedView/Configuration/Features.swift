@@ -16,6 +16,11 @@ private struct MarkdownMCodeReferenceHandlerKey: EnvironmentKey {
     static let defaultValue: (@Sendable (MCodeReference) -> Void)? = nil
 }
 
+/// Environment key for the base URL used to resolve relative links.
+private struct MarkdownBaseURLKey: EnvironmentKey {
+    static let defaultValue: URL? = nil
+}
+
 public extension EnvironmentValues {
     /// A custom handler for link taps in ``MarkdownView``.
     var markdownLinkHandler: (@Sendable (URL) -> Void)? {
@@ -27,6 +32,12 @@ public extension EnvironmentValues {
     var markdownMCodeReferenceHandler: (@Sendable (MCodeReference) -> Void)? {
         get { self[MarkdownMCodeReferenceHandlerKey.self] }
         set { self[MarkdownMCodeReferenceHandlerKey.self] = newValue }
+    }
+    
+    /// The base URL used to resolve relative links in ``MarkdownView``.
+    var markdownBaseURL: URL? {
+        get { self[MarkdownBaseURLKey.self] }
+        set { self[MarkdownBaseURLKey.self] = newValue }
     }
 }
 
@@ -40,5 +51,10 @@ public extension View {
     /// Sets a custom handler for code reference taps in Markdown code blocks.
     func onMCodeReferenceTap(_ handler: @escaping @Sendable (MCodeReference) -> Void) -> some View {
         environment(\.markdownMCodeReferenceHandler, handler)
+    }
+    
+    /// Sets the base URL used to resolve relative links.
+    func markdownBaseURL(_ url: URL?) -> some View {
+        environment(\.markdownBaseURL, url)
     }
 }

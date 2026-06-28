@@ -12,31 +12,17 @@ import Markdown
 /// Renders a parsed Markdown document to SwiftUI views.
 struct MarkdownRenderer: View {
     let snapshot: MarkdownRenderSnapshot
-    let theme: MarkdownTheme
-    let baseURL: URL?
     let isLazy: Bool
     
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
-    
-    @State var viewWidth: Double = 1024
+    @Environment(\.markdownTheme) private var theme
     
     var body: some View {
-       
-        let context = MarkdownContext(
-            theme: theme,
-            baseURL: baseURL, viewWidth: viewWidth,
-            linkHandler: linkHandler,
-            MCodeReferenceHandler: MCodeReferenceHandler
-        )
-        
         if isLazy {
             LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
                 ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
                     RenderBlock(
                         markup: block.markup,
-                        features: block.features,
-                        context: context
+                        features: block.features
                     )
                     .transition(.markdownBlockAppear)
                     .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
@@ -45,35 +31,24 @@ struct MarkdownRenderer: View {
             }
             .lineSpacing(theme.paragraphSpacing)
             .foregroundColor(theme.textColor)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear
-                        .onChange(of: proxy.size.width, initial: true) { viewWidth = $1 }
-                }
-            }
         } else {
             VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
+                
                 ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
                     RenderBlock(
                         markup: block.markup,
-                        features: block.features,
-                        context: context
+                        features: block.features
                     )
-                    .transition(.markdownBlockAppear)
+                    
                     .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
                 }
+                .transition(.markdownBlockAppear)
+                .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
             }
             .lineSpacing(theme.paragraphSpacing)
             .foregroundColor(theme.textColor)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear
-                        .onChange(of: proxy.size.width, initial: true) { viewWidth = $1 }
-                }
-            }
+            
         }
-        
     }
 }
 
@@ -109,11 +84,9 @@ extension View {
     func selectionTextPassThrough() -> some View {
 #if os(macOS)
         self
-            .allowsHitTesting(false)
             .pointerStyle(.horizontalText)
 #else
         self
-            .allowsHitTesting(false)
 #endif
     }
 

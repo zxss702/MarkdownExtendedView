@@ -18,15 +18,16 @@ public struct MarkdownView: View, @MainActor Equatable {
     public init(_ content: String, baseURL: URL? = nil, isLazy: Bool = false) {
         self.content = content
         self.baseURL = baseURL
+
+        self.isLazy = isLazy
         if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
             self._snapshot = State(initialValue: cached)
-        } else if content.count <= Self.synchronousParseCharacterLimit {
+        } else if !isLazy {
             let parsed = MarkdownRenderSnapshot.parseSynchronously(content)
             self._snapshot = State(initialValue: parsed)
         } else {
             self._snapshot = State(initialValue: MarkdownRenderSnapshot.empty)
         }
-        self.isLazy = isLazy
     }
 
     // MARK: - Stored Properties
@@ -34,9 +35,9 @@ public struct MarkdownView: View, @MainActor Equatable {
     private let content: String
     private let baseURL: URL?
     private let isLazy: Bool
+    
     // MARK: - State
 
-    @Environment(\.markdownTheme) private var theme
     @State private var snapshot: MarkdownRenderSnapshot
     @State private var helper = ViewHelper()
 
@@ -49,21 +50,26 @@ public struct MarkdownView: View, @MainActor Equatable {
     // MARK: - Body
 
     public var body: some View {
-        MarkdownRenderer(snapshot: snapshot, theme: theme, baseURL: baseURL, isLazy: isLazy)
-            .lineLimit(nil)
+        MarkdownRenderer(snapshot: snapshot, isLazy: isLazy)
+//            .lineLimit(nil)
+            .markdownBaseURL(baseURL)
             .onAppear {
-                if snapshot.blocks.isEmpty && !content.isEmpty {
+                if isLazy && snapshot.blocks.isEmpty && !content.isEmpty {
                     scheduleSnapshotUpdate(for: content, debounce: false)
                 }
             }
             .onChange(of: content) { _, newValue in
-                scheduleSnapshotUpdate(for: newValue, debounce: true)
+                if isLazy {
+                    scheduleSnapshotUpdate(for: newValue, debounce: true)
+                } else {
+                    snapshot = MarkdownRenderSnapshot.parseSynchronously(newValue)
+                }
             }
             .onDisappear {
                 helper.updateTask?.cancel()
                 helper.updateTask = nil
             }
-            
+        
     }
 
     // MARK: - Snapshot Updates
@@ -97,7 +103,6 @@ public struct MarkdownView: View, @MainActor Equatable {
         }
     }
 }
-
 
 public extension View {
     func markdownTheme(_ theme: MarkdownTheme) -> some View {

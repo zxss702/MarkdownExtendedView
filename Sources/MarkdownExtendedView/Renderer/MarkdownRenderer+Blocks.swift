@@ -11,23 +11,26 @@ import Markdown
 struct RenderBlock: View {
     let markup: any Markup
     let features: MarkdownBlockFeatures
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         if let heading = markup as? Heading {
-            RenderHeading(heading: heading, features: features, context: context)
+            RenderHeading(heading: heading, features: features)
         } else if let paragraph = markup as? Paragraph {
-            RenderParagraph(paragraph: paragraph, features: features, context: context)
+            RenderParagraph(paragraph: paragraph, features: features)
         } else if let codeBlock = markup as? CodeBlock {
-            RenderCodeBlock(codeBlock: codeBlock, context: context)
+            RenderCodeBlock(codeBlock: codeBlock)
         } else if let blockQuote = markup as? BlockQuote {
-            RenderBlockQuote(blockQuote: blockQuote, context: context)
+            RenderBlockQuote(blockQuote: blockQuote)
         } else if let orderedList = markup as? OrderedList {
-            RenderOrderedList(list: orderedList, depth: 0, context: context)
+            RenderOrderedList(list: orderedList, depth: 0)
         } else if let unorderedList = markup as? UnorderedList {
-            RenderUnorderedList(list: unorderedList, depth: 0, context: context)
+            RenderUnorderedList(list: unorderedList, depth: 0)
         } else if let table = markup as? Markdown.Table {
-            RenderTable(table: table, context: context)
+            RenderTable(table: table)
         } else if markup is ThematicBreak {
             Divider().padding(.vertical, 8)
         } else if let htmlBlock = markup as? HTMLBlock {
@@ -39,8 +42,8 @@ struct RenderBlock: View {
                     ) ?? NSAttributedString(string: htmlBlock.rawHTML)
                 )
             )
-            .font(context.theme.codeSwiftUIFont)
-            .foregroundColor(context.theme.secondaryTextColor)
+            .font(theme.codeSwiftUIFont)
+            .foregroundColor(theme.secondaryTextColor)
             .selectionTextPassThrough()
         }
     }
@@ -51,19 +54,20 @@ struct RenderBlock: View {
 struct RenderHeading: View {
     let heading: Heading
     let features: MarkdownBlockFeatures
-    let context: MarkdownContext
-
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    
     var body: some View {
-        BuildInlineText(
-            parent: heading,
-            features: features,
-            context: context
-        )
-        .font(context.theme.headingSwiftUIFont(level: heading.level))
-        .foregroundColor(context.theme.textColor)
-        .contentTransition(.numericText())
-        .padding(.top, heading.level == 1 ? 16 : 8)
-        .padding(.bottom, 4)
+        let nativeFont = theme.headingFont(level: heading.level)
+        let baseFontSize = nativeFont.pointSize
+        
+        if features.contains(.hasMCodeReferences) || features.contains(.hasImages) || features.contains(.hasLinks) {
+            BuildInlineText(parent: heading, features: features, baseFont: theme.headingSwiftUIFont(level: heading.level), baseFontSize: baseFontSize)
+        } else {
+            MarkdownTextBuilder(theme: theme, baseURL: baseURL, baseFont: theme.headingSwiftUIFont(level: heading.level), baseFontSize: baseFontSize).build(from: heading)
+                .font(theme.headingSwiftUIFont(level: heading.level))
+                .makeCanSelectable()
+        }
     }
 }
 
@@ -72,22 +76,21 @@ struct RenderHeading: View {
 struct RenderParagraph: View {
     let paragraph: Paragraph
     let features: MarkdownBlockFeatures
-    let context: MarkdownContext
-
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    
     var body: some View {
         let plainText = paragraph.plainText
         if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") {
             let latex = String(plainText.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
-            LaTeXView(latex: latex, isBlock: true, theme: context.theme)
+            LaTeXView(latex: latex, isBlock: true, theme: theme)
+                .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
+        } else if features.contains(.hasMCodeReferences) || features.contains(.hasImages) || features.contains(.hasLinks) {
+            BuildInlineText(parent: paragraph, features: features, baseFont: theme.bodySwiftUIFont, baseFontSize: theme.bodyFont.pointSize)
         } else {
-            BuildInlineText(
-                parent: paragraph,
-                features: features,
-                context: context
-            )
-            .font(context.theme.bodySwiftUIFont)
-            .foregroundColor(context.theme.textColor)
-            .contentTransition(.numericText())
+            MarkdownTextBuilder(theme: theme, baseURL: baseURL, baseFont: theme.bodySwiftUIFont, baseFontSize: theme.bodyFont.pointSize).build(from: paragraph)
+                .font(theme.bodySwiftUIFont)
+                .makeCanSelectable()
         }
     }
 }
@@ -96,60 +99,90 @@ struct RenderParagraph: View {
 
 struct RenderCodeBlock: View {
     let codeBlock: CodeBlock
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         if codeBlock.language == "mermaid" {
-            RenderMermaidBlock(codeBlock: codeBlock, context: context)
+            RenderMermaidBlock(codeBlock: codeBlock)
         } else {
-            RenderRegularCodeBlock(codeBlock: codeBlock, context: context)
+            RenderRegularCodeBlock(codeBlock: codeBlock)
         }
     }
 }
 
 struct RenderMermaidBlock: View {
     let codeBlock: CodeBlock
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
     
     var body: some View {
-        MermaidView(code: codeBlock.code, theme: context.theme, viewWidth: context.viewWidth)
+        MermaidView(code: codeBlock.code, theme: theme, viewWidth: 1024)
+            .makeCanSelectable(isBlock: true, blockText: codeBlock.code)
     }
 }
 
 struct RenderRegularCodeBlock: View {
     let codeBlock: CodeBlock
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        Group {
-            if codeBlock.language != nil {
-                HighlightedCodeView(
-                    code: codeBlock.code,
-                    language: codeBlock.language,
-                    theme: context.theme
-                )
-            } else {
-                Text(codeBlock.code.trimmingCharacters(in: .newlines))
-                    .font(context.theme.codeBlockSwiftUIFont)
-                    .contentTransition(.numericText())
-                    .foregroundColor(context.theme.textColor)
-            }
+        buildCodeText()
+            .makeCanSelectable()
+            .contentTransition(.numericText())
+            .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: false))
+    }
+    
+    @ViewBuilder
+    private func buildCodeText() -> some View {
+        if codeBlock.language != nil {
+            HighlightedCodeView(
+                code: codeBlock.code,
+                language: codeBlock.language,
+                theme: theme
+            )
+        } else {
+            buildPlainCodeText()
         }
-        .modifier(CodeBlockContainerModifier(theme: context.theme, isInteractive: false))
+    }
+    
+    private func buildPlainCodeText() -> SwiftUI.Text {
+        var combinedText = SwiftUI.Text("")
+        let plainString = codeBlock.code.trimmingCharacters(in: .newlines)
+        var offset = 0
+        for char in plainString {
+            var charAttr = AttributedString(String(char))
+            charAttr.font = theme.codeBlockSwiftUIFont
+            charAttr.foregroundColor = theme.textColor
+            var piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
+            combinedText = combinedText + piece
+            offset += 1
+        }
+        return combinedText
     }
 }
 
 struct RenderMCodeReferences: View {
     let references: [MCodeReference]
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
                 MCodeReferenceBlockView(
                     reference: reference,
-                    theme: context.theme,
-                    tapHandler: context.MCodeReferenceHandler
+                    theme: theme,
+                    tapHandler: MCodeReferenceHandler
                 )
             }
         }
@@ -160,20 +193,23 @@ struct RenderMCodeReferences: View {
 
 struct RenderBlockQuote: View {
     let blockQuote: BlockQuote
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         HStack(spacing: 0) {
             Rectangle()
-                .fill(context.theme.blockQuoteBorderColor)
+                .fill(theme.blockQuoteBorderColor)
                 .frame(width: 4)
 
-            VStack(alignment: .leading, spacing: context.theme.paragraphSpacing / 2) {
+            VStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
                 ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
                     RenderBlock(
                         markup: child,
                         features: computeInlineFeatures(child),
-                        context: context
+                        
                     )
                 }
             }
@@ -193,34 +229,40 @@ func bulletForDepth(_ depth: Int) -> String {
 struct RenderOrderedList: View {
     let list: OrderedList
     let depth: Int
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        VStack(alignment: .leading, spacing: context.theme.listItemSpacing) {
+        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.listItems.enumerated()), id: \.offset) { index, item in
-                RenderListItem(item: item, bullet: "\(index + Int(list.startIndex)).", depth: depth, context: context)
+                RenderListItem(item: item, bullet: "\(index + Int(list.startIndex)).", depth: depth)
             }
         }
-        .padding(.leading, depth > 0 ? context.theme.indentation : 0)
+        .padding(.leading, depth > 0 ? theme.indentation : 0)
     }
 }
 
 struct RenderUnorderedList: View {
     let list: UnorderedList
     let depth: Int
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        VStack(alignment: .leading, spacing: context.theme.listItemSpacing) {
+        VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(list.listItems.enumerated()), id: \.offset) { _, item in
                 if item.checkbox != nil {
-                    RenderTaskListItem(item: item, depth: depth, context: context)
+                    RenderTaskListItem(item: item, depth: depth)
                 } else {
-                    RenderListItem(item: item, bullet: bulletForDepth(depth), depth: depth, context: context)
+                    RenderListItem(item: item, bullet: bulletForDepth(depth), depth: depth)
                 }
             }
         }
-        .padding(.leading, depth > 0 ? context.theme.indentation : 0)
+        .padding(.leading, depth > 0 ? theme.indentation : 0)
     }
 }
 
@@ -228,19 +270,30 @@ struct RenderListItem: View {
     let item: ListItem
     let bullet: String
     let depth: Int
-    let context: MarkdownContext
-
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
+    
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
-            Text(bullet)
-                .font(context.theme.bodySwiftUIFont)
-                .contentTransition(.numericText(countsDown: true))
-                .foregroundColor(context.theme.textColor)
-                .selectionTextPassThrough()
+            let t = Text(bullet)
+                .font(theme.bodySwiftUIFont)
+                .foregroundColor(theme.textColor)
+            
+           
+            if item.parent is OrderedList {
+                t
+                    .contentTransition(.numericText(countsDown: true))
+                    .makeCanSelectable(isBlock: true, blockText: bullet)
+            } else {
+                t
+                    .contentTransition(.numericText(countsDown: true))
+            }
 
-            VStack(alignment: .leading, spacing: context.theme.listItemSpacing) {
+            VStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                    RenderListChildBlock(markup: child, depth: depth, context: context)
+                    RenderListChildBlock(markup: child, depth: depth)
                 }
             }
         }
@@ -250,18 +303,21 @@ struct RenderListItem: View {
 struct RenderTaskListItem: View {
     let item: ListItem
     let depth: Int
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: item.checkbox?.isChecked == true ? "checkmark.square.fill" : "square")
-                .font(context.theme.bodySwiftUIFont)
-                .foregroundColor(item.checkbox?.isChecked == true ? context.theme.linkColor : context.theme.secondaryTextColor)
+                .font(theme.bodySwiftUIFont)
+                .foregroundColor(item.checkbox?.isChecked == true ? theme.linkColor : theme.secondaryTextColor)
                 .frame(width: 20, alignment: .trailing)
 
-            VStack(alignment: .leading, spacing: context.theme.listItemSpacing) {
+            VStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                    RenderListChildBlock(markup: child, depth: depth, context: context)
+                    RenderListChildBlock(markup: child, depth: depth)
                 }
             }
         }
@@ -271,15 +327,18 @@ struct RenderTaskListItem: View {
 struct RenderListChildBlock: View {
     let markup: any Markup
     let depth: Int
-    let context: MarkdownContext
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         if let nestedOrdered = markup as? OrderedList {
-            RenderOrderedList(list: nestedOrdered, depth: depth + 1, context: context)
+            RenderOrderedList(list: nestedOrdered, depth: depth + 1)
         } else if let nestedUnordered = markup as? UnorderedList {
-            RenderUnorderedList(list: nestedUnordered, depth: depth + 1, context: context)
+            RenderUnorderedList(list: nestedUnordered, depth: depth + 1)
         } else {
-            RenderBlock(markup: markup, features: computeInlineFeatures(markup), context: context)
+            RenderBlock(markup: markup, features: computeInlineFeatures(markup))
         }
     }
 }

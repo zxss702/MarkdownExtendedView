@@ -8,40 +8,59 @@ import Markdown
 
 // MARK: - Inline Rendering
 
+fileprivate func extractPlainTextForFeatures(from markup: any Markup) -> String {
+    if let plainText = markup as? any PlainTextConvertibleMarkup {
+        return plainText.plainText
+    }
+    return markup.children.map { extractPlainTextForFeatures(from: $0) }.joined()
+}
+
 func computeInlineFeatures(_ markup: any Markup) -> MarkdownBlockFeatures {
     var features: MarkdownBlockFeatures = []
-    if markup is Markdown.Image { features.insert(.hasImages) }
-    if markup is Markdown.Link { features.insert(.hasLinks) }
-    if let code = markup as? InlineCode, let refs = parseMCodeReferences(from: code.code), !refs.isEmpty {
-        features.insert(.hasMCodeReferences)
+    
+    // Check LaTeX using the full text of the markup to handle formulas spanning multiple nodes
+    let plainText = extractPlainTextForFeatures(from: markup)
+    if LaTeXPreprocessor.containsLaTeX(plainText) {
+        features.insert(.hasLaTeX)
     }
-    if let plainTextConvertible = markup as? (any PlainTextConvertibleMarkup) {
-        if LaTeXPreprocessor.containsLaTeX(plainTextConvertible.plainText) {
-            features.insert(.hasLaTeX)
+    
+    func visit(_ node: any Markup) {
+        if node is Markdown.Image { features.insert(.hasImages) }
+        if node is Markdown.Link { features.insert(.hasLinks) }
+        if let code = node as? InlineCode, let refs = parseMCodeReferences(from: code.code), !refs.isEmpty {
+            features.insert(.hasMCodeReferences)
+        }
+        for child in node.children {
+            visit(child)
         }
     }
-    for child in markup.children {
-        features.formUnion(computeInlineFeatures(child))
-    }
+    visit(markup)
+    
     return features
 }
 
 struct BuildInlineText: View {
     let parent: any Markup
     let features: MarkdownBlockFeatures
-    let context: MarkdownContext
+    var baseFont: Font? = nil
+    var baseFontSize: CGFloat? = nil
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         if features.contains(.hasLaTeX) {
-            RenderTextWithLaTeX(parent: parent, context: context)
+            RenderTextWithLaTeX(parent: parent, baseFont: baseFont, baseFontSize: baseFontSize)
         } else if features.contains(.hasMCodeReferences) {
-            RenderTextWithLinks(parent: parent, context: context)
+            RenderTextWithLinks(parent: parent, baseFont: baseFont, baseFontSize: baseFontSize)
         } else if features.contains(.hasLinks) {
-            RenderTextWithLinks(parent: parent, context: context)
+            RenderTextWithLinks(parent: parent, baseFont: baseFont, baseFontSize: baseFontSize)
         } else if features.contains(.hasImages) {
-            RenderTextWithImages(parent: parent, context: context)
+            RenderTextWithImages(parent: parent, baseFont: baseFont, baseFontSize: baseFontSize)
         } else {
-            buildAttributedText(from: parent, theme: context.theme).selectionTextPassThrough()
+            // Note: Should not be reached because MarkdownTextBuilder handles the simple cases
+            EmptyView()
         }
     }
 }
@@ -49,17 +68,22 @@ struct BuildInlineText: View {
 
 struct RenderTextWithImages: View {
     let parent: any Markup
-    let context: MarkdownContext
+    var baseFont: Font? = nil
+    var baseFontSize: CGFloat? = nil
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         FlowLayout(
             spacing: 0,
-            lineSpacing: context.theme.paragraphSpacing,
-            minimumLineHeight: context.theme.bodyFont.markdownLineHeight
+            lineSpacing: theme.paragraphSpacing,
+            minimumLineHeight: theme.bodyFont.markdownLineHeight
         ) {
             let elements = flowInlineElements(from: parent)
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
-                RenderInlineFlowElement(element: element, context: context)
+                RenderInlineFlowElement(element: element, baseFont: baseFont, baseFontSize: baseFontSize)
             }
         }
     }
@@ -67,17 +91,22 @@ struct RenderTextWithImages: View {
 
 struct RenderTextWithLinks: View {
     let parent: any Markup
-    let context: MarkdownContext
+    var baseFont: Font? = nil
+    var baseFontSize: CGFloat? = nil
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         FlowLayout(
             spacing: 0,
-            lineSpacing: context.theme.paragraphSpacing,
-            minimumLineHeight: context.theme.bodyFont.markdownLineHeight
+            lineSpacing: theme.paragraphSpacing,
+            minimumLineHeight: theme.bodyFont.markdownLineHeight
         ) {
             let elements = flowInlineElements(from: parent)
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
-                RenderInlineFlowElement(element: element, context: context)
+                RenderInlineFlowElement(element: element, baseFont: baseFont, baseFontSize: baseFontSize)
             }
         }
     }
@@ -85,56 +114,94 @@ struct RenderTextWithLinks: View {
 
 fileprivate struct RenderInlineFlowElement: View {
     let element: InlineFlowElement
-    let context: MarkdownContext
-
+    var baseFont: Font? = nil
+    var baseFontSize: CGFloat? = nil
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
+    
     var body: some View {
         switch element {
         case .text(let text, let style):
-            styledText(text, style: style, theme: context.theme)
-                .selectionTextPassThrough()
-
+            buildSelectableText(text, style: style)
+                .makeCanSelectable()
+            
         case .link(let link):
             TappableLinkView(
                 link: link,
-                theme: context.theme,
-                linkHandler: context.linkHandler,
-                baseURL: context.baseURL
+                theme: theme,
+                linkHandler: linkHandler,
+                baseURL: baseURL
             )
-
+            .makeCanSelectable(isBlock: true, blockText: link.plainText)
+            
         case .codeReference(let reference):
             MCodeReferenceBlockView(
                 reference: reference,
-                theme: context.theme,
-                tapHandler: context.MCodeReferenceHandler
+                theme: theme,
+                tapHandler: MCodeReferenceHandler
             )
-
+            .makeCanSelectable(isBlock: true, blockText: reference.referenceString)
         case .image(let image):
             MarkdownImageView(
                 image: image,
-                theme: context.theme,
-                baseURL: context.baseURL
+                theme: theme,
+                baseURL: baseURL
             )
-
+            .makeCanSelectable(isBlock: true, blockText: "[\(image.plainText)]")
+            
         case .latex(let latex, let isBlock):
             if isBlock {
-                LaTeXView(latex: latex, isBlock: true, theme: context.theme)
+                LaTeXView(latex: latex, isBlock: true, theme: theme, overrideFontSize: baseFontSize)
                     .layoutValue(key: BlockFormulaKey.self, value: true)
+                    .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
             } else {
-                LaTeXView(latex: latex, isBlock: false, theme: context.theme)
+                LaTeXView(latex: latex, isBlock: false, theme: theme, overrideFontSize: baseFontSize)
                     .layoutValue(key: InlineFormulaKey.self, value: true)
+                    .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
             }
-
+            
         case .lineBreak:
             Color.clear
-                .frame(width: 0, height: context.theme.bodyFont.markdownLineHeight)
+                .frame(width: 0, height: theme.bodyFont.markdownLineHeight)
                 .layoutValue(key: FlowLineBreakLayoutValueKey.self, value: true)
         }
+    }
+    
+    private func buildSelectableText(_ text: String, style: InlineTextStyle) -> SwiftUI.Text {
+        let baseFont = self.baseFont ?? theme.bodySwiftUIFont
+        var result = SwiftUI.Text("")
+        
+        for (i, char) in text.enumerated() {
+            var charAttr = AttributedString(String(char))
+            if style.contains(.code) {
+                charAttr.font = baseFont
+                charAttr.inlinePresentationIntent = .code
+            } else {
+                charAttr.font = baseFont
+                if style.contains(.bold) { charAttr.font = charAttr.font?.bold() }
+                if style.contains(.italic) { charAttr.font = charAttr.font?.italic() }
+            }
+            if style.contains(.strikethrough) { charAttr.strikethroughStyle = .single }
+            charAttr.foregroundColor = theme.textColor
+            
+            let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: i, char: String(char)))
+            result = result + piece
+        }
+        
+        return result
     }
 }
 
 struct RenderTextWithLaTeX: View {
     let parent: any Markup
-    let context: MarkdownContext
+    var baseFont: Font? = nil
+    var baseFontSize: CGFloat? = nil
+    @Environment(\.markdownTheme) private var theme
+    @Environment(\.markdownBaseURL) private var baseURL
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         let plainText = extractPlainText(from: parent)
@@ -142,12 +209,12 @@ struct RenderTextWithLaTeX: View {
 
         FlowLayout(
             spacing: 0,
-            lineSpacing: context.theme.paragraphSpacing,
-            minimumLineHeight: context.theme.bodyFont.markdownLineHeight
+            lineSpacing: theme.paragraphSpacing,
+            minimumLineHeight: theme.bodyFont.markdownLineHeight
         ) {
             let elements = flowInlineElements(from: segments)
             ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
-                RenderInlineFlowElement(element: element, context: context)
+                RenderInlineFlowElement(element: element, baseFont: baseFont, baseFontSize: baseFontSize)
             }
         }
     }
