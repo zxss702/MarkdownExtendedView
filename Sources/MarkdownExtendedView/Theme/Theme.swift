@@ -160,7 +160,7 @@ typealias MarkdownSystemFontWeight = UIFont.Weight
 /// `MarkdownTheme` provides comprehensive control over typography, colors, and spacing
 /// for all Markdown elements. Fonts are stored as native AppKit/UIKit fonts so the same
 /// values can be used for both rendering and height estimation.
-public struct MarkdownTheme: @unchecked Sendable {
+public struct MarkdownTheme {
 
     // MARK: - Text Styles
 
@@ -324,9 +324,9 @@ public struct MarkdownTheme: @unchecked Sendable {
 
 public extension MarkdownTheme {
 
-    static let `default` = MarkdownTheme()
+    @MainActor static let `default` = MarkdownTheme()
 
-    static let gitHub = MarkdownTheme(
+    @MainActor static let gitHub = MarkdownTheme(
         bodyFont: MarkdownThemeFontDefaults.system(size: 16),
         heading1Font: MarkdownThemeFontDefaults.system(size: 32, weight: .bold),
         heading2Font: MarkdownThemeFontDefaults.system(size: 24, weight: .bold),
@@ -345,7 +345,7 @@ public extension MarkdownTheme {
         codeBlockPadding: 16
     )
 
-    static let compact = MarkdownTheme(
+    @MainActor static let compact = MarkdownTheme(
         bodyFont: MarkdownThemeFontDefaults.system(size: 14),
         heading1Font: MarkdownThemeFontDefaults.system(size: 22, weight: .bold),
         heading2Font: MarkdownThemeFontDefaults.system(size: 20, weight: .bold),
@@ -364,13 +364,13 @@ public extension MarkdownTheme {
 
 // MARK: - Environment Key
 
-private struct MarkdownThemeKey: EnvironmentKey {
-    static let defaultValue = MarkdownTheme.default
+private struct MarkdownThemeKey: @MainActor EnvironmentKey {
+    @MainActor static let defaultValue = MarkdownTheme.default
 }
 
 public extension EnvironmentValues {
     /// The current Markdown theme used by ``MarkdownView`` instances.
-    var markdownTheme: MarkdownTheme {
+    @MainActor var markdownTheme: MarkdownTheme {
         get { self[MarkdownThemeKey.self] }
         set { self[MarkdownThemeKey.self] = newValue }
     }

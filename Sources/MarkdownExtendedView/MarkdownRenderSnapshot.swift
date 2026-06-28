@@ -203,7 +203,7 @@ struct MarkdownRenderSnapshot: Sendable {
 
 // MARK: - Block Node
 
-struct MarkdownBlockNode: Identifiable, @unchecked Sendable {
+struct MarkdownBlockNode: Identifiable {
     let id: UUID
     let kind: String
     let markup: any Markup
@@ -221,7 +221,7 @@ private final class MarkdownParsedChildrenCache {
     }()
 }
 
-private final class MarkdownParsedChildrenBox: NSObject, @unchecked Sendable {
+private final class MarkdownParsedChildrenBox: NSObject {
     let children: [any Markup]
 
     init(children: [any Markup]) {
@@ -238,7 +238,7 @@ private final class MarkdownSnapshotCache {
     }()
 }
 
-private final class MarkdownSnapshotBox: NSObject, @unchecked Sendable {
+private final class MarkdownSnapshotBox: NSObject {
     let snapshot: MarkdownRenderSnapshot
 
     init(snapshot: MarkdownRenderSnapshot) {

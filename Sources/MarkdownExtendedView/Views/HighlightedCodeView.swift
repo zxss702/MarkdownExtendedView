@@ -67,7 +67,7 @@ public struct HighlightedCodeView: View {
         
         for (index, line) in lines.enumerated() {
             if index > 0 {
-                var nl = SwiftUI.Text("\n").customAttribute(MarkdownCharacterAttribute(index: offset, char: "\n"))
+                let nl = SwiftUI.Text("\n").customAttribute(MarkdownCharacterAttribute(index: offset, char: "\n"))
                 combinedText = combinedText + nl
                 offset += 1
             }
@@ -79,7 +79,7 @@ public struct HighlightedCodeView: View {
                     for char in token.text {
                         var charAttr = AttributedString(String(char))
                         charAttr.foregroundColor = color
-                        var piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
+                        let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
                         combinedText = combinedText + piece
                         offset += 1
                     }

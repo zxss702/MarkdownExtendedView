@@ -142,13 +142,8 @@ struct SelectableModifier: ViewModifier {
             .backgroundPreferenceValue(MarkdownLayoutKey.self) { layouts in
                 GeometryReader { proxy in
                     Color.clear
-                        .onAppear {
+                        .task(id: layouts) {
                             resolvedLayouts = layouts.map {
-                                ResolvedLayout(blockId: $0.blockId, rect: proxy[$0.bounds], isBlock: $0.isBlock, blockText: $0.blockText)
-                            }
-                        }
-                        .onChange(of: layouts) { _, newLayouts in
-                            resolvedLayouts = newLayouts.map {
                                 ResolvedLayout(blockId: $0.blockId, rect: proxy[$0.bounds], isBlock: $0.isBlock, blockText: $0.blockText)
                             }
                             updateGlobalCharacters()

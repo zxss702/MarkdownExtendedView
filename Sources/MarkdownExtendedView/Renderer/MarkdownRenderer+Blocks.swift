@@ -161,7 +161,7 @@ struct RenderRegularCodeBlock: View {
             var charAttr = AttributedString(String(char))
             charAttr.font = theme.codeBlockSwiftUIFont
             charAttr.foregroundColor = theme.textColor
-            var piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
+            let piece = SwiftUI.Text(charAttr).customAttribute(MarkdownCharacterAttribute(index: offset, char: String(char)))
             combinedText = combinedText + piece
             offset += 1
         }
