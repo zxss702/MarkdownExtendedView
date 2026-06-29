@@ -78,27 +78,26 @@ struct MarkdownTextBuilder {
                 styledText(text, style: .init())
                 
             case .latex(let latex, _):
-                // Render inline latex to Image
-                let fontSize = self.baseFontSize ?? theme.latexInlineFontSize
+                let fSize = self.baseFontSize ?? theme.latexInlineFontSize
                 #if canImport(AppKit)
                 let mtColor = NSColor(theme.textColor)
                 #elseif canImport(UIKit)
                 let mtColor = UIColor(theme.textColor)
                 #endif
                 
-                let image = MTMathImage(latex: latex, fontSize: fontSize, textColor: mtColor, labelMode: .text)
-                let displayList = MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fontSize, isBlock: false)
-                // The bottom of the image sits on the text baseline by default.
-                // We shift the image down by its descent so its internal baseline matches the text baseline.
-                let descent = displayList?.descent ?? 0
+                let cached = MathDisplayCache.shared.getCachedImage(
+                    latex: latex,
+                    fontSize: fSize,
+                    isBlock: false,
+                    textColor: mtColor
+                )
                 
                 var imageText: SwiftUI.Text
-                if let img = image.asImage().1 {
-                    #if canImport(AppKit)
-                    imageText = SwiftUI.Text(Image(nsImage: img)).baselineOffset(-descent)
-                    #elseif canImport(UIKit)
-                    imageText = SwiftUI.Text(Image(uiImage: img)).baselineOffset(-descent)
-                    #endif
+                if let cached = cached {
+                    // The baseline in cached.image is `descent` from the bottom (inkPadding is 0 for inline).
+                    // We offset by `-(descent)` to align it with the text baseline.
+                    let offset = -cached.descent
+                    imageText = SwiftUI.Text(cached.image).baselineOffset(offset)
                 } else {
                     imageText = SwiftUI.Text("$\(latex)$")
                 }

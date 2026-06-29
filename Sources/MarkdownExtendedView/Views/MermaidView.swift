@@ -5,168 +5,121 @@
 // Licensed under MIT License
 
 import SwiftUI
-import WebKit
-
-#if canImport(UIKit)
-import UIKit
-#endif
+import BeautifulMermaid
 
 #if canImport(AppKit)
 import AppKit
+#elseif canImport(UIKit)
+import UIKit
 #endif
 
-/// A view that renders Mermaid diagrams by leveraging a global headless renderer.
-struct MermaidView: View {
+/// Global cache to store synchronously parsed Mermaid images to avoid re-parsing during view re-evaluation.
+@MainActor
+final class MermaidImageCache {
+    static let shared = MermaidImageCache()
+    private let cache = NSCache<NSString, BMImage>()
+    
+    private init() {
+        cache.countLimit = 100
+    }
+    
+    func getImage(for code: String, theme: DiagramTheme) -> BMImage? {
+        // We use a simple hash of the code as the key.
+        // If theme properties change significantly, you might want to include theme hash in the key.
+        let key = NSString(string: "\(code.hashValue)")
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+        
+        let renderer = MermaidImageRenderer(
+            theme: theme,
+            config: LayoutConfig(
+                padding: 0,
+                nodeSpacing: 32,
+                layerSpacing: 48,
+                componentSpacing: 24
+            )
+        )
+        // Parse and render synchronously on the current thread
+        if let image = try? renderer.renderImage(from: code, scale: (NSScreen.main?.backingScaleFactor ?? 2)) {
+            cache.setObject(image, forKey: key)
+            return image
+        }
+        return nil
+    }
+}
 
+/// A view that renders Mermaid diagrams using the native BeautifulMermaidSwift library.
+struct MermaidView: View {
     let code: String
     let theme: MarkdownTheme
-
     let viewWidth: CGFloat
     
-    @State private var renderResult: MermaidRenderResult? = nil
-
-    @State var showSheet = false
+    @State private var diagramImage: BMImage? = nil
     
-    @State var width: CGFloat? = nil
-    var body: some View {
-        let fontSize: CGFloat = 14
+    init(code: String, theme: MarkdownTheme, viewWidth: CGFloat) {
+        self.code = code
+        self.theme = theme
+        self.viewWidth = viewWidth
         
-        ZStack {
-            if let result = renderResult {
-                let scale = min(1.0, viewWidth / result.width)
-                let finalWidth = result.width * scale
-                let finalHeight = result.height * scale
-                
-                MermaidSVGWebView(svg: result.svg)
-                    .frame(width: finalWidth, height: finalHeight)
-                    .allowsHitTesting(false)
-                    .sheet(isPresented: $showSheet) {
-                        MermaidSVGWebView(svg: result.svg)
-                            .frame(width: result.width, height: result.height)
-                            .padding(.all, 32)
-                            .overlay(alignment: .topTrailing) {
-                                Button {
-                                    showSheet = false
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .frame(width: 48, height: 48)
-                                        .containerShape(Circle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                    }
-            }
-        }
-        .onTapGesture {
-            showSheet.toggle()
-        }
-        .task(id: code, priority: .userInitiated) {
-            do {
-                let result = try await MermaidRenderer.shared.render(code: code, fontSize: fontSize)
-                self.renderResult = result
-            } catch {}
-        }
-        .onChange(of: code) { oldValue, newValue in
-            let cacheKey = "\(newValue)_\(fontSize)" as NSString
-            if let cached = MermaidRenderer.shared.cache.object(forKey: cacheKey) {
-                self.renderResult = cached.result
-            }
+        // 1. Convert MarkdownTheme to DiagramTheme
+        #if canImport(AppKit)
+        let fg = NSColor(theme.textColor)
+        let sg = NSColor(theme.secondaryTextColor)
+        #elseif canImport(UIKit)
+        let fg = UIColor(theme.textColor)
+        let sg = UIColor(theme.secondaryTextColor)
+        #endif
+        
+        let diagramTheme = DiagramTheme(
+            background: .windowBackgroundColor,
+            foreground: fg,
+            line: fg,
+            accent: fg,
+            muted: sg,
+            surface: .windowBackgroundColor,
+            border: .clear,
+            font: .systemFont(ofSize: 14, weight: .light),
+            lineWidth: 1,
+            cornerRadius: 16,
+            transparent: true
+        )
+        
+        // 2. Synchronously fetch or parse the image
+        if let image = MermaidImageCache.shared.getImage(for: code, theme: diagramTheme) {
+            self._diagramImage = State(initialValue: image)
+        } else {
+            self._diagramImage = State(initialValue: nil)
         }
     }
-}
-
-// MARK: - Platform-Specific SVG WebView
-
-#if canImport(UIKit)
-
-struct MermaidSVGWebView: UIViewRepresentable {
-    let svg: String
-
-    func makeUIView(context: Context) -> WKWebView {
-        let webView = WKWebView(frame: .zero)
-        webView.scrollView.showsVerticalScrollIndicator = false
-        webView.scrollView.showsHorizontalScrollIndicator = false
-        webView.scrollView.bounces = false
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        webView.loadHTMLString(generateSVGHTML(svg: svg), baseURL: nil)
-    }
-}
-
-#elseif canImport(AppKit)
-
-struct MermaidSVGWebView: NSViewRepresentable {
-    let svg: String
-
-    func makeNSView(context: Context) -> CustomWKWebView {
-        let webView = CustomWKWebView(frame: .zero)
-        webView.setValue(false, forKey: "drawsBackground")
-        return webView
-    }
-
-    func updateNSView(_ webView: CustomWKWebView, context: Context) {
-        webView.loadHTMLString(generateSVGHTML(svg: svg), baseURL: nil)
-    }
-
-    final class CustomWKWebView: WKWebView {
-        override func scrollWheel(with event: NSEvent) {
-            nextResponder?.scrollWheel(with: event)
-            super.scrollWheel(with: event)
+    
+    var body: some View {
+        if let image = diagramImage {
+            #if canImport(AppKit)
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .makeCanSelectable(isBlock: true, blockText: code)
+            
+                .frame(maxWidth: image.size.width) // Use logical size
+                .frame(maxWidth: .infinity, alignment: .center)
+            #elseif canImport(UIKit)
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .makeCanSelectable(isBlock: true, blockText: code)
+            
+                .frame(maxWidth: image.size.width)
+                .frame(maxWidth: .infinity, alignment: .center)
+            #endif
+        } else {
+            SwiftUI.Text(code)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(theme.secondaryTextColor)
+            
+                .makeCanSelectable()
+            
+                .frame(maxWidth: .infinity, alignment: .center)
         }
     }
-}
-
-#endif
-
-// MARK: - HTML Generation for SVG
-
-/// Generates a minimal HTML document for rendering pure SVG.
-private func generateSVGHTML(svg: String) -> String {
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            html, body {
-                width: 100%;
-                height: 100%;
-                overflow: hidden;
-                overscroll-behavior: none;
-                background: transparent;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            svg {
-                display: block;
-                max-width: 100%;
-                max-height: 100%;
-                width: auto !important;
-                height: auto !important;
-            }
-        </style>
-    </head>
-    <body>
-        \(svg)
-        <script>
-            window.addEventListener('wheel', (e) => {
-                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                    e.preventDefault();
-                }
-            }, { passive: false });
-        </script>
-    </body>
-    </html>
-    """
 }

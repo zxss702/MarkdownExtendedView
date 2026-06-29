@@ -122,7 +122,6 @@ struct RenderMermaidBlock: View {
     
     var body: some View {
         MermaidView(code: codeBlock.code, theme: theme, viewWidth: 1024)
-            .makeCanSelectable(isBlock: true, blockText: codeBlock.code)
     }
 }
 

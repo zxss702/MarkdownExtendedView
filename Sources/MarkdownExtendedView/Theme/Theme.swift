@@ -217,7 +217,7 @@ public struct MarkdownTheme {
         heading6Font: MarkdownNativeFont = MarkdownThemeFontDefaults.heading6,
         codeFont: MarkdownNativeFont = MarkdownThemeFontDefaults.code,
         codeBlockFont: MarkdownNativeFont = MarkdownThemeFontDefaults.codeBlock,
-        latexInlineFontSize: CGFloat = 13,
+        latexInlineFontSize: CGFloat = 14,
         latexBlockFontSize: CGFloat = 20,
         mermaidFontSize: CGFloat = 13,
         textColor: Color = .primary,
@@ -310,7 +310,7 @@ public struct MarkdownTheme {
         ].joined(separator: "|")
     }
 
-    public func toTextAlignment() -> TextAlignment {
+    public func toTextAlignment() -> SwiftUI.TextAlignment {
         switch textAlignment {
         case .center: return .center
         case .leading: return .leading

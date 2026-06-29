@@ -7,6 +7,10 @@
 import SwiftUI
 import Synchronization
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 struct LayoutWidthPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -32,13 +36,7 @@ struct LaTeXView: View {
 
     var body: some View {
         if isBlock {
-            // Display/block math - centered, larger
-            HStack {
-                Spacer()
-                mathView
-                    .padding(.vertical, 12)
-                Spacer()
-            }
+            mathView
         } else {
             // Inline math - flows with text
             mathView
@@ -60,13 +58,16 @@ struct LaTeXView: View {
     private var mathView: some View {
         let ascent = calculatedAscent
         let fSize = overrideFontSize ?? (isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
-        MathView(latex: latex, maxWidth: effectiveMaxWidth)
-            .labelMode(isBlock ? .display : .text)
-            .font(fontSize: fSize)
-            .foregroundColor(textColor)
-            .alignmentGuide(.firstTextBaseline) { _ in
-                ascent
-            }
+        MathView(
+            latex: latex,
+            fontSize: fSize,
+            textColor: textColor,
+            labelMode: isBlock ? .display : .text,
+            maxWidth: effectiveMaxWidth
+        )
+        .alignmentGuide(.firstTextBaseline) { _ in
+            ascent
+        }
     }
 
     private var textColor: MTColor {
@@ -79,9 +80,9 @@ struct LaTeXView: View {
 
     private var calculatedAscent: CGFloat {
         let fSize = overrideFontSize ?? (isBlock ? theme.latexBlockFontSize : theme.latexInlineFontSize)
-        let displayList = MathDisplayCache.shared.getDisplay(latex: latex, fontSize: fSize, isBlock: isBlock)
-        // Add half of the inkPadding (which is 8, so 4) to shift the baseline down properly.
-        return (displayList?.ascent ?? 0) + 4
+        let displayList = MathDisplayCache.shared.getList(latex: latex, fontSize: fSize, isBlock: isBlock)
+        // Add half of the inkPadding (which is 8 for block, 0 for inline) to shift the baseline down properly.
+        return (displayList?.ascent ?? 0) + (isBlock ? 4 : 0)
     }
 }
 
@@ -89,80 +90,132 @@ struct LaTeXView: View {
 
 final class MathDisplayCache: @unchecked Sendable {
     static let shared = MathDisplayCache()
-    private let cache = Mutex<[String: MTMathListDisplay]>([:])
+    
+    struct CacheKey: Hashable {
+        let latex: String
+        let fontSize: CGFloat
+        let isBlock: Bool
+        let maxWidth: CGFloat
+    }
+    
+    private let listCache = Mutex<[CacheKey: MTMathListDisplay]>([:])
+    
+    struct CachedImage {
+        let image: Image
+        let ascent: CGFloat
+        let descent: CGFloat
+        let width: CGFloat
+    }
+    
+    struct ImageCacheKey: Hashable {
+        let latex: String
+        let fontSize: CGFloat
+        let isBlock: Bool
+        let maxWidth: CGFloat
+        let colorHash: Int
+    }
+    
+    private let imageCache = Mutex<[ImageCacheKey: CachedImage]>([:])
 
-    func getDisplay(latex: String, fontSize: CGFloat, isBlock: Bool, maxWidth: CGFloat = 0) -> MTMathListDisplay? {
-        let key = "\(latex)_\(fontSize)_\(isBlock)_\(maxWidth)"
+    func getList(latex: String, fontSize: CGFloat, isBlock: Bool, maxWidth: CGFloat = 0) -> MTMathListDisplay? {
+        let key = CacheKey(latex: latex, fontSize: fontSize, isBlock: isBlock, maxWidth: maxWidth)
+        return listCache.withLock { $0[key] }
+    }
+
+    func getCachedImage(latex: String, fontSize: CGFloat, isBlock: Bool, maxWidth: CGFloat = 0, textColor: MTColor) -> CachedImage? {
+        let key = ImageCacheKey(latex: latex, fontSize: fontSize, isBlock: isBlock, maxWidth: maxWidth, colorHash: textColor.hashValue)
         
-        if let display = cache.withLock({ $0[key] }) {
-            return display
+        if let cached = imageCache.withLock({ $0[key] }) {
+            return cached
         }
         
-        var error: NSError?
-        guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error),
-              let font = MTFontManager.manager.defaultFont?.copy(withSize: fontSize) else {
+        let listKey = CacheKey(latex: latex, fontSize: fontSize, isBlock: isBlock, maxWidth: maxWidth)
+        let displayList: MTMathListDisplay
+        
+        if let cachedList = listCache.withLock({ $0[listKey] }) {
+            displayList = cachedList
+        } else {
+            var error: NSError?
+            guard let mathList = MTMathListBuilder.build(fromString: latex, error: &error),
+                  let font = MTFontManager.manager.defaultFont?.copy(withSize: fontSize) else {
+                return nil
+            }
+            let style: MTLineStyle = isBlock ? .display : .text
+            guard let list = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: maxWidth) else {
+                return nil
+            }
+            displayList = list
+            listCache.withLock { $0[listKey] = list }
+        }
+        
+        let inkPadding: CGFloat = isBlock ? 8 : 0
+        let size = CGSize(width: displayList.width + inkPadding, height: displayList.ascent + displayList.descent + inkPadding)
+        displayList.textColor = textColor
+        
+        #if os(macOS)
+        let scale = (NSScreen.main?.backingScaleFactor ?? 2.0) * 2.0
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        
+        guard let context = CGContext(data: nil, width: Int(ceil(size.width * scale)), height: Int(ceil(size.height * scale)), bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: bitmapInfo) else {
             return nil
         }
         
-        let style: MTLineStyle = isBlock ? .display : .text
-        if let displayList = MTTypesetter.createLineForMathList(mathList, font: font, style: style, maxWidth: maxWidth) {
-            cache.withLock { $0[key] = displayList }
-            return displayList
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: inkPadding/2, y: displayList.descent + inkPadding/2)
+        displayList.draw(context)
+        
+        guard let cgImage = context.makeImage() else { return nil }
+        let finalImage = Image(nsImage: NSImage(cgImage: cgImage, size: size))
+        #else
+        let scale = UIScreen.main.scale * 2.0
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let uiImage = renderer.image { ctx in
+            let cgContext = ctx.cgContext
+            cgContext.saveGState()
+            cgContext.translateBy(x: 0, y: size.height)
+            cgContext.scaleBy(x: 1.0, y: -1.0)
+            cgContext.translateBy(x: inkPadding/2, y: displayList.descent + inkPadding/2)
+            displayList.draw(cgContext)
+            cgContext.restoreGState()
         }
-        return nil
+        let finalImage = Image(uiImage: uiImage)
+        #endif
+        
+        let cached = CachedImage(image: finalImage, ascent: displayList.ascent, descent: displayList.descent, width: displayList.width)
+        imageCache.withLock { $0[key] = cached }
+        return cached
     }
 }
 
 // MARK: - MathView (SwiftMath Wrapper)
 
-/// A pure SwiftUI view that renders LaTeX using a Canvas.
+/// A pure SwiftUI view that renders LaTeX using a baked cached Image.
 struct MathView: View {
     let latex: String
     var fontSize: CGFloat = 16
-    var textColor: MTColor = .black
+    var textColor: MTColor = .textColor
     var labelMode: MTMathUILabelMode = .display
     var maxWidth: CGFloat? = nil
 
-    private var displayList: MTMathListDisplay? {
-        MathDisplayCache.shared.getDisplay(
+    private var cachedResult: MathDisplayCache.CachedImage? {
+        MathDisplayCache.shared.getCachedImage(
             latex: latex,
             fontSize: fontSize,
             isBlock: labelMode == .display,
-            maxWidth: maxWidth ?? 0
+            maxWidth: maxWidth ?? 0,
+            textColor: textColor
         )
     }
     
-    // Padding to prevent clipping of tall ink bounds (e.g., italic L, integrals)
     private let inkPadding: CGFloat = 8
 
     var body: some View {
-        if let displayList = displayList {
-            Canvas { context, size in
-                context.withCGContext { cgContext in
-                    displayList.textColor = textColor
-                    
-                    // SwiftUI Canvas coordinate system is Y-down (0,0 is top-left)
-                    // CoreText expects Y-up (0,0 is bottom-left).
-                    cgContext.translateBy(x: 0, y: size.height)
-                    cgContext.scaleBy(x: 1.0, y: -1.0)
-                    
-                    // MTDisplay is drawn with origin at the baseline.
-                    // By shifting up by `descent + inkPadding/2`, the bottom of the display rests at Y=0 (bottom of the Canvas).
-                    cgContext.translateBy(x: inkPadding/2, y: displayList.descent + inkPadding/2)
-                    
-                    displayList.draw(cgContext)
-                }
-            }
-            .frame(
-                minWidth: maxWidth != nil ? nil : (displayList.width + inkPadding),
-                idealWidth: displayList.width + inkPadding,
-                maxWidth: maxWidth ?? (displayList.width + inkPadding),
-                minHeight: maxWidth != nil ? nil : (displayList.ascent + displayList.descent + inkPadding),
-                idealHeight: nil,
-                maxHeight: displayList.ascent + displayList.descent + inkPadding
-            )
-            .fixedSize(horizontal: maxWidth == nil, vertical: true)
-            .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
+        if let cached = cachedResult {
+            cached.image
+                .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
         } else {
             // Fallback for parsing errors
             Text(latex)

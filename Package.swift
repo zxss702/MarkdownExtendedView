@@ -17,16 +17,24 @@ let package = Package(
     ],
     dependencies: [
         // Apple's official Markdown parser (CommonMark + GFM extensions)
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", branch: "main")
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", branch: "main"),
+        .package(url: "https://github.com/lukilabs/elk-swift", from: "1.0.2")
     ],
     targets: [
         .target(
+            name: "BeautifulMermaid",
+            dependencies: [
+                .product(name: "ElkSwift", package: "elk-swift")
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
             name: "MarkdownExtendedView",
             dependencies: [
+                "BeautifulMermaid",
                 .product(name: "Markdown", package: "swift-markdown")
             ],
             resources: [
-                .process("Views/mermaid.js"),
                 .copy("SwiftMath/mathFonts.bundle")
             ]
         ),
