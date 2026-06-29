@@ -22,9 +22,6 @@ public struct MarkdownView: View, @MainActor Equatable {
         self.isLazy = isLazy
         if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
             self._snapshot = State(initialValue: cached)
-        } else if !isLazy {
-            let parsed = MarkdownRenderSnapshot.parseSynchronously(content)
-            self._snapshot = State(initialValue: parsed)
         } else {
             self._snapshot = State(initialValue: MarkdownRenderSnapshot.empty)
         }
@@ -54,16 +51,12 @@ public struct MarkdownView: View, @MainActor Equatable {
 //            .lineLimit(nil)
             .markdownBaseURL(baseURL)
             .onAppear {
-                if isLazy && snapshot.blocks.isEmpty && !content.isEmpty {
+                if snapshot.blocks.isEmpty && !content.isEmpty {
                     scheduleSnapshotUpdate(for: content, debounce: false)
                 }
             }
             .onChange(of: content) { _, newValue in
-                if isLazy {
-                    scheduleSnapshotUpdate(for: newValue, debounce: true)
-                } else {
-                    snapshot = MarkdownRenderSnapshot.parseSynchronously(newValue)
-                }
+                scheduleSnapshotUpdate(for: newValue, debounce: true)
             }
             .onDisappear {
                 helper.updateTask?.cancel()
