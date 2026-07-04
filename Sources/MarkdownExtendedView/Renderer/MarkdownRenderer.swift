@@ -26,7 +26,6 @@ struct MarkdownRenderer: View {
                     )
                     .transition(.markdownBlockAppear)
                     .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
                 }
             }
             .lineSpacing(theme.paragraphSpacing)
@@ -43,7 +42,6 @@ struct MarkdownRenderer: View {
                     .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
                 }
                 .transition(.markdownBlockAppear)
-                .frame(maxWidth: .infinity, alignment: Alignment(horizontal: theme.textAlignment, vertical: .center))
             }
             .lineSpacing(theme.paragraphSpacing)
             .foregroundColor(theme.textColor)
