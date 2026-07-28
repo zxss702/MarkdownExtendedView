@@ -8,7 +8,7 @@
 import Foundation
 import Markdown
 
-public let canonicalMCodeReferenceFormat = "`file:///.../name:<start>-<end>`"
+public let canonicalMCodeReferenceFormat = "`/.../name:<start>-<end>`"
 
 public enum MCodeReferenceSelectionError: Error, Sendable {
     case lineOutOfRange(totalLineCount: Int)
@@ -247,7 +247,7 @@ private func normalizedFileURL(from url: URL, isDirectory: Bool) -> URL {
 nonisolated extension URL {
     func filePathString() -> String {
         let path = self.path(percentEncoded: false)
-        return "file://" + (path.removingPercentEncoding ?? path)
+        return path.removingPercentEncoding ?? path
     }
 
     init?(content: String) {
@@ -336,34 +336,20 @@ func parseMCodeReferences(from rawText: String) -> [MCodeReference]? {
         return nil
     }
 
-    guard trimmed.hasPrefix("file://") else {
+    let looksLikeFileReference = trimmed.hasPrefix("file://") || trimmed.hasPrefix("/")
+    guard looksLikeFileReference else {
         return nil
     }
 
-    let fileURLMarker = "file://"
-    var markerRanges: [Range<String.Index>] = []
-    var searchStart = trimmed.startIndex
-    while let range = trimmed.range(of: fileURLMarker, range: searchStart..<trimmed.endIndex) {
-        markerRanges.append(range)
-        searchStart = range.upperBound
-    }
-
-    let separatorCharacters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",，、;；"))
-    if markerRanges.count > 1 {
+    let segments = splitFileReferenceSegments(trimmed)
+    if segments.count > 1 {
         var references: [MCodeReference] = []
-
-        for (index, markerRange) in markerRanges.enumerated() {
-            let nextStart = index + 1 < markerRanges.count ? markerRanges[index + 1].lowerBound : trimmed.endIndex
-            let rawSegment = String(trimmed[markerRange.lowerBound..<nextStart])
-            let segment = rawSegment.trimmingCharacters(in: separatorCharacters)
-
+        for segment in segments {
             guard let reference = MCodeReference(segment) else {
                 return nil
             }
-
             references.append(reference)
         }
-
         return references.isEmpty ? nil : references
     }
 
@@ -372,6 +358,73 @@ func parseMCodeReferences(from rawText: String) -> [MCodeReference]? {
     }
 
     return nil
+}
+
+/// Splits a block into absolute file-reference segments.
+/// New segments start only at `file://` markers, or at `/` / `file://` after a delimiter
+/// (so selection commas inside one path are preserved).
+private func splitFileReferenceSegments(_ text: String) -> [String] {
+    let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",，、;；"))
+
+    if text.hasPrefix("file://") {
+        let fileURLMarker = "file://"
+        var markerRanges: [Range<String.Index>] = []
+        var searchStart = text.startIndex
+        while let range = text.range(of: fileURLMarker, range: searchStart..<text.endIndex) {
+            markerRanges.append(range)
+            searchStart = range.upperBound
+        }
+
+        guard markerRanges.count > 1 else { return [text] }
+
+        var segments: [String] = []
+        for (index, markerRange) in markerRanges.enumerated() {
+            let nextStart = index + 1 < markerRanges.count ? markerRanges[index + 1].lowerBound : text.endIndex
+            let segment = String(text[markerRange.lowerBound..<nextStart]).trimmingCharacters(in: separators)
+            if !segment.isEmpty {
+                segments.append(segment)
+            }
+        }
+        return segments
+    }
+
+    var startIndices: [String.Index] = [text.startIndex]
+    var index = text.startIndex
+    while index < text.endIndex {
+        guard let scalar = text[index].unicodeScalars.first, separators.contains(scalar) else {
+            index = text.index(after: index)
+            continue
+        }
+
+        var afterSeparators = index
+        while afterSeparators < text.endIndex,
+              let s = text[afterSeparators].unicodeScalars.first,
+              separators.contains(s) {
+            afterSeparators = text.index(after: afterSeparators)
+        }
+
+        if afterSeparators < text.endIndex {
+            let remainder = text[afterSeparators...]
+            if remainder.hasPrefix("/") || remainder.hasPrefix("file://") {
+                startIndices.append(afterSeparators)
+                index = afterSeparators
+                continue
+            }
+        }
+        index = afterSeparators < text.endIndex ? afterSeparators : text.endIndex
+    }
+
+    guard startIndices.count > 1 else { return [text] }
+
+    var segments: [String] = []
+    for (i, start) in startIndices.enumerated() {
+        let end = i + 1 < startIndices.count ? startIndices[i + 1] : text.endIndex
+        let segment = String(text[start..<end]).trimmingCharacters(in: separators)
+        if !segment.isEmpty {
+            segments.append(segment)
+        }
+    }
+    return segments
 }
 
 private func splitFileReferenceAndSelection(_ rawReference: String) -> (url: URL, selection: String)? {

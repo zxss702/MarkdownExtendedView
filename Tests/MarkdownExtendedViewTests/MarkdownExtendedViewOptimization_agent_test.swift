@@ -36,7 +36,7 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
 
     @MainActor
     func test_agent_featureMaskDetectsMCodeReferences() async throws {
-        let content = "See `file:///tmp/test.swift:1-5` for reference."
+        let content = "See `/tmp/test.swift:1-5` for reference."
         let snapshot = await MarkdownRenderSnapshot.parse(content)
         let paragraph = snapshot.blocks.first!
         let features = paragraph.features
