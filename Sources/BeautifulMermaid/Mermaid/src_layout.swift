@@ -333,12 +333,11 @@ private func _buildElkGraph(_ graph: _ParsedGraph) -> _ElkNode {
             opts["elk.direction"] = _mapDirection(dir)
         }
 
-        let subLabel = sub.label ?? sub.id
         var result: [String: Any] = [
             "id": sub.id,
             "layoutOptions": opts,
             "children": children,
-            "labels": [["text": subLabel]]
+            "labels": [["text": sub.label]]
         ]
         if !ports.isEmpty { result["ports"] = ports }
         if !subgraphEdges.isEmpty { result["edges"] = subgraphEdges }
@@ -1375,12 +1374,11 @@ private func _buildElkGraphNoCrossEdges(_ graph: _ParsedGraph) -> _ElkNode {
             opts["elk.direction"] = _mapDirection(dir)
         }
 
-        let subLabel = sub.label ?? sub.id
         var result: [String: Any] = [
             "id": sub.id,
             "layoutOptions": opts,
             "children": children,
-            "labels": [["text": subLabel]]
+            "labels": [["text": sub.label]]
         ]
         if let subEdges = edgesBySubgraph[sub.id], !subEdges.isEmpty {
             result["edges"] = subEdges
