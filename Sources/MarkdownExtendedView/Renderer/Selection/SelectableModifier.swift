@@ -1,230 +1,283 @@
 // SelectableModifier.swift
 // MarkdownExtendedView
+//
+//  `.selectable()` container: collects every descendant `Text` layout via
+//  `Text.LayoutKey`, collects opt-in anchors via `MarkdownLayoutKey`, and
+//  builds the `SelectionDocument` synchronously whenever layout changes.
+//  Text selection only engages for views wrapped in
+//  `makeCanSelectable()` — everything else stays non-selectable.
+//
+//  Interaction is a plain `DragGesture` (the proven approach): drags map
+//  to selection positions via the document; links and buttons remain
+//  tappable because a tap never crosses the drag threshold.
 
 import SwiftUI
+import UniformTypeIdentifiers
 #if canImport(AppKit)
 import AppKit
 #elseif canImport(UIKit)
 import UIKit
 #endif
 
-import Observation
-
-struct ResolvedLayout: Equatable {
-    let blockId: UUID
-    let rect: CGRect
-    let isBlock: Bool
-    let blockText: String
-}
-
-struct GlobalCharacter: Equatable {
-    let blockId: UUID
-    let charIndex: Int
-    let char: String
-    let globalRect: CGRect
-}
-
 struct SelectableModifier: ViewModifier {
-    
-    @State var selectionCache = GlobalSelectionCache()
-    
-    @FocusState private var isFocused: Bool
-    
-    func updateglobalCharacters() {
-        var chars: [GlobalCharacter] = []
-        
-        // 1. 按 midY 排序 (行间)
-        let sortedLayouts = selectionCache.resolvedLayouts.sorted { $0.rect.midY < $1.rect.midY }
-        
-        // 2. 分组为行 (midY 差值 < 8 视为同一行)
-        var lines: [[ResolvedLayout]] = []
-        var currentLine: [ResolvedLayout] = []
-        var lastMidY: CGFloat?
-        
-        for layout in sortedLayouts {
-            if let last = lastMidY, abs(layout.rect.midY - last) >= 8 {
-                lines.append(currentLine)
-                currentLine = []
-            }
-            currentLine.append(layout)
-            lastMidY = layout.rect.midY
-        }
-        lines.append(currentLine)
-        
-        // 3. 每行内按 midX 排序，展开为字符
-        for line in lines {
-            let sortedLine = line.sorted { $0.rect.midX < $1.rect.midX }
-            for layout in sortedLine {
-                if layout.isBlock {
-                    chars.append(GlobalCharacter(
-                        blockId: layout.blockId,
-                        charIndex: 0,
-                        char: layout.blockText + "\n\n",
-                        globalRect: layout.rect
-                    ))
-                } else {
-                    if let runs = selectionCache.runs[layout.blockId] {
-                        let sortedRuns = runs.sorted { $0.index < $1.index }
-                        for run in sortedRuns {
-                            let globalRect = run.rect.offsetBy(
-                                dx: layout.rect.minX,
-                                dy: layout.rect.minY
-                            )
-                            chars.append(GlobalCharacter(
-                                blockId: layout.blockId,
-                                charIndex: run.index,
-                                char: run.char,
-                                globalRect: globalRect
-                            ))
-                        }
-                        if let lastChar = chars.last {
-                            let newlineRect = CGRect(
-                                x: lastChar.globalRect.maxX,
-                                y: lastChar.globalRect.minY,
-                                width: 0,
-                                height: lastChar.globalRect.height
-                            )
-                            chars.append(GlobalCharacter(
-                                blockId: layout.blockId,
-                                charIndex: Int.max,
-                                char: "\n\n",
-                                globalRect: newlineRect
-                            ))
-                        }
-                    }
-                }
-            }
-        }
-        
-        self.selectionCache.globalCharacters = chars
-    }
-    
-    /// 返回距离 point 最近的文本插入索引 (0...characters.count)
-    func closestCharacterIndex(to point: CGPoint) -> Int? {
-        guard !selectionCache.globalCharacters.isEmpty else { return nil }
-        
-        var bestIndex = 0
-        var bestDistSq: CGFloat = .infinity
-        var bestCharLeft: CGFloat = 0
-        
-        // 遍历所有字符，找到点到矩形距离最短的那个
-        for (i, char) in selectionCache.globalCharacters.enumerated() where char.globalRect.minY < point.y {
-            let rect = char.globalRect
-            
-            // 计算点到矩形的最短距离（平方）
-            let dx = max(rect.minX - point.x, point.x - rect.maxX, 0)
-            let dy = max(rect.minY - point.y, point.y - rect.maxY, 0)
-            let distSq = dx * dx + dy * dy
-            
-            if distSq < bestDistSq {
-                bestDistSq = distSq
-                bestIndex = i
-                bestCharLeft = rect.minX
-            } else if distSq == bestDistSq {
-                // 如果距离相等（例如点在两个字符正中间），优先选择更靠左的字符
-                if rect.minX < bestCharLeft {
-                    bestIndex = i
-                    bestCharLeft = rect.minX
-                }
-            }
-        }
-        
-        return bestIndex
-    }
-    
-    @State var selectedRange: ClosedRange<Int>?
-    
+
+    @State private var model = SelectionModel()
+    @State private var selectionCache = GlobalSelectionCache()
+    @State private var textLayouts: SwiftUI.Text.LayoutKey.Value = []
+    #if canImport(AppKit)
+    @State private var hoverLocation: CGPoint?
+    @State private var cursorPushed = false
+    #endif
+
     func body(content: Content) -> some View {
         content
-            .backgroundPreferenceValue(MarkdownLayoutKey.self) { layouts in
-                GeometryReader { proxy in
+            .environment(selectionCache)
+            .onPreferenceChange(SwiftUI.Text.LayoutKey.self) { layouts in
+                textLayouts = layouts
+            }
+            .backgroundPreferenceValue(MarkdownLayoutKey.self) { anchors in
+                GeometryReader { geometry in
                     Color.clear
-                        .task(id: layouts) {
-                            selectionCache.resolvedLayouts = layouts.map {
-                                ResolvedLayout(blockId: $0.blockId, rect: proxy[$0.bounds], isBlock: $0.isBlock, blockText: $0.blockText)
-                            }
-                            updateglobalCharacters()
+                        .onChange(
+                            of: SelectionLayoutInputID(
+                                layouts: textLayouts,
+                                anchors: anchors,
+                                size: geometry.size
+                            ),
+                            initial: true
+                        ) { _, _ in
+                            model.updateLayout(
+                                textLayouts: textLayouts,
+                                anchors: anchors,
+                                geometry: geometry
+                            )
                         }
                 }
             }
             .overlay {
-                if let range = selectedRange {
-                    Path { path in
-                        for i in range {
-                            let rect = selectionCache.globalCharacters[i].globalRect
-                            if rect.width > 0 {
-                                path.addPath(Path(roundedRect: rect.insetBy(dx: -1, dy: -1), cornerRadius: 1, style: .continuous))
-                            }
-                        }
-                    }
-                    .fill(Color.blue.opacity(0.15))
-                    .blendMode(.multiply)
+                SelectionHighlightLayer(model: model)
                     .allowsHitTesting(false)
-                }
             }
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        if !isFocused {
-                            isFocused = true
+                        if !model.isDraggingSelection {
+                            model.beginSelectionDrag(at: value.startLocation)
                         }
-                        
-                        let start = value.startLocation
-                        let current = value.location
-                        
-                        if selectionCache.globalCharacters.isEmpty {
-                            updateglobalCharacters()
-                        }
-                        
-                        guard !selectionCache.globalCharacters.isEmpty else {
-                            selectedRange = nil
-                            return
-                        }
-                        
-                        guard
-                            let startIndex = closestCharacterIndex(to: start),
-                            let endIndex = closestCharacterIndex(to: current)
-                        else {
-                            selectedRange = nil
-                            return
-                        }
-                        
-                        selectedRange = min(startIndex, endIndex) ... max(startIndex, endIndex)
+                        model.updateSelectionDrag(to: value.location)
+                    }
+                    .onEnded { _ in
+                        model.endSelectionDrag()
                     }
             )
+#if canImport(AppKit)
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                switch phase {
+                case .active(let location):
+                    hoverLocation = location
+                    updateCursor(at: location)
+                case .ended:
+                    hoverLocation = nil
+                    releaseCursor()
+                }
+            }
+#endif
+            .contextMenu {
+                contextMenuContent
+            }
 #if canImport(AppKit)
             .background(
                 WindowDeselectHandler(
-                    onDeselect: {
-                        selectedRange = nil
-                        selectionCache.globalCharacters = []
-                    },
-                    onCopy: {
-                        if let range = selectedRange {
-                            let selectedText = selectionCache.globalCharacters[range].map { $0.char }.joined()
-                            if !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                let pasteboard = NSPasteboard.general
-                                pasteboard.clearContents()
-                                pasteboard.setString(selectedText, forType: .string)
-                                return true
-                            }
-                        }
-                        return false
-                    }
+                    onDeselect: { model.clearSelection() },
+                    onCopy: copySelection,
+                    onSelectAll: { model.selectAll() }
                 )
             )
 #endif
-            .environment(selectionCache)
     }
-    
-    private func copyToPasteboard(_ text: String) {
-#if canImport(AppKit)
+
+    // MARK: - Context menu
+
+    @ViewBuilder
+    private var contextMenuContent: some View {
+        #if canImport(AppKit)
+        let insideSelection = hoverLocation.map(model.isPointInsideSelection) ?? false
+        if insideSelection {
+            selectionMenuItems
+        } else if let link = hoverLocation.flatMap({ model.link(at: $0) }) {
+            Button("拷贝链接") { copyLink(link) }
+        } else if model.hasNonCollapsedSelection {
+            selectionMenuItems
+        }
+        #else
+        if model.hasNonCollapsedSelection {
+            selectionMenuItems
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var selectionMenuItems: some View {
+        Button("拷贝") { copySelection() }
+        Button("仅拷贝为文本") { copySelectionAsText() }
+        Divider()
+        Button("含图像拷贝") { copySelectionRich() }
+    }
+
+    // MARK: - Hover cursor
+
+    #if canImport(AppKit)
+    private func updateCursor(at point: CGPoint) {
+        let overLink = model.link(at: point) != nil
+        guard overLink != cursorPushed else {
+            return
+        }
+        if overLink {
+            NSCursor.pointingHand.push()
+        } else {
+            NSCursor.pop()
+        }
+        cursorPushed = overLink
+    }
+
+    private func releaseCursor() {
+        if cursorPushed {
+            NSCursor.pop()
+            cursorPushed = false
+        }
+    }
+    #endif
+
+    // MARK: - Copy
+
+    private func selectedText() -> String? {
+        guard let text = model.selectedPlainText(),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return text
+    }
+
+    /// 拷贝 — attributed rich text (RTF) plus a plain string.
+    @discardableResult
+    private func copySelection() -> Bool {
+        guard let attributed = model.selectedAttributedText(),
+              !attributed.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        #if canImport(AppKit)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([attributed])
+        return true
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = attributed.string
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// 仅拷贝为文本 — plain string only.
+    private func copySelectionAsText() {
+        guard let text = selectedText() else {
+            return
+        }
+        #if canImport(AppKit)
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-#elseif canImport(UIKit)
+        #elseif canImport(UIKit)
         UIPasteboard.general.string = text
-#endif
+        #endif
+    }
+
+    /// 含图像拷贝 — RTFD carrying rendered images (formulas, mermaid,
+    /// code-reference icons); the plain-text fallback keeps the normal
+    /// payloads (raw references, `$…$`, alt text).
+    private func copySelectionRich() {
+        guard let rich = model.selectedRichText(), rich.length > 0 else {
+            return
+        }
+        let fullRange = NSRange(location: 0, length: rich.length)
+        #if canImport(AppKit)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if
+            let rtfd = try? rich.data(
+                from: fullRange,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+            )
+        {
+            pasteboard.setData(rtfd, forType: .rtfd)
+        }
+        if
+            let rtf = try? rich.data(
+                from: fullRange,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+            )
+        {
+            pasteboard.setData(rtf, forType: .rtf)
+        }
+        if let text = selectedText() {
+            pasteboard.setString(text, forType: .string)
+        }
+        #elseif canImport(UIKit)
+        var item: [String: Any] = [
+            UTType.plainText.identifier: selectedText() ?? rich.string
+        ]
+        if
+            let rtfd = try? rich.data(
+                from: fullRange,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+            )
+        {
+            item[UTType.flatRTFD.identifier] = rtfd
+        }
+        UIPasteboard.general.items = [item]
+        #endif
+    }
+
+    /// 拷贝链接 — code references copy the canonical POSIX form
+    /// (`` `/abs/path:<46>-<58>` ``); other links copy the URL verbatim.
+    private func copyLink(_ link: String) {
+        let text: String
+        if
+            let url = URL(string: link),
+            url.isFileURL,
+            let reference = MCodeReference(link)
+        {
+            text = "`\(reference.referenceString)`"
+        } else {
+            text = link
+        }
+        #if canImport(AppKit)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = text
+        #endif
+    }
+}
+
+/// Line-merged highlight rectangles for the current selection.
+private struct SelectionHighlightLayer: View {
+    let model: SelectionModel
+
+    var body: some View {
+        Path { path in
+            for selectionRect in model.selectionRects {
+                let rect = selectionRect.rect.insetBy(dx: -1, dy: -1)
+                guard rect.width > 0, rect.height > 0 else { continue }
+                path.addPath(
+                    Path(roundedRect: rect, cornerRadius: 2, style: .continuous)
+                )
+            }
+        }
+        .fill(Color.accentColor.opacity(0.2))
+        .blendMode(.multiply)
+        .allowsHitTesting(false)
     }
 }
 
@@ -234,38 +287,57 @@ public extension View {
     }
 }
 
+// MARK: - Opt-in anchor
+
+/// Marks a view as selectable inside a `.selectable()` container.
+/// - `isBlock: false` — the view contributes its laid-out `Text`s (their
+///   center must fall inside this anchor's bounds).
+/// - `isBlock: true` — the whole view is one atomic selection unit whose
+///   copy payload is `blockText`; any `Text` inside is excluded.
 public struct MakeTextSelectable: ViewModifier {
     @Environment(GlobalSelectionCache.self) private var selectionCache: GlobalSelectionCache?
+    @Environment(\.markdownSelectionLinePrefix) private var linePrefix
     @State private var blockId = UUID()
 
-    public let isBlock: Bool // True for latex blocks, mermaid, etc. False for normal text.
-    public let blockText: String // Optional text for block-level selection copying
-    
+    public let isBlock: Bool
+    public let blockText: String
+    /// Rendered image for rich copies (mermaid diagram, block formula).
+    public let richImage: MTImage?
+
     public func body(content: Content) -> some View {
-        if let selectionCache {
-            if isBlock {
-                content
-                    .pointerStyle(.horizontalText)
-                    .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
-                        [MarkdownLayout(blockId: blockId, bounds: bounds, isBlock: isBlock, blockText: blockText)]
-                    }
-            } else {
-                content
-                    .textRenderer(SelectionLayoutTextRenderer(cache: selectionCache, blockId: blockId))
-                    .pointerStyle(.horizontalText)
-                    .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
-                        [MarkdownLayout(blockId: blockId, bounds: bounds, isBlock: isBlock, blockText: blockText)]
-                    }
-            }
+        if selectionCache != nil {
+            content
+                .selectionTextPassThrough()
+                .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
+                    [
+                        MarkdownLayout(
+                            blockId: blockId,
+                            bounds: bounds,
+                            isBlock: isBlock,
+                            blockText: blockText,
+                            linePrefix: linePrefix.isEmpty ? nil : linePrefix,
+                            richImage: richImage
+                        )
+                    ]
+                }
         } else {
             content
         }
-        
     }
 }
 
 public extension View {
-    func makeCanSelectable(isBlock: Bool = false, blockText: String = "") -> some View {
-        self.modifier(MakeTextSelectable(isBlock: isBlock, blockText: blockText))
+    func makeCanSelectable(
+        isBlock: Bool = false,
+        blockText: String = "",
+        richImage: MTImage? = nil
+    ) -> some View {
+        self.modifier(
+            MakeTextSelectable(
+                isBlock: isBlock,
+                blockText: blockText,
+                richImage: richImage
+            )
+        )
     }
 }
