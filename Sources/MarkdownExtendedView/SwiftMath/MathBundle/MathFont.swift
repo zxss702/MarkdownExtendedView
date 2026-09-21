@@ -103,6 +103,9 @@ private final class BundleManager: @unchecked Sendable {
     private var cgFonts = [MathFont: CGFont]()
     private var ctFonts = [CTFontSizePair: CTFont]()
     private var rawMathTables = [MathFont: NSDictionary]()
+    /// Registered file URLs — kept so `deinit` can unregister through
+    /// the matching URL-based API.
+    private var fontURLs = [MathFont: URL]()
 
     private let threadSafeQueue = DispatchQueue(label: "com.smartmath.mathfont.threadsafequeue",
                                                 qos: .userInitiated,
@@ -125,10 +128,12 @@ private final class BundleManager: @unchecked Sendable {
         /// This does not load the complete math font, it only has about half the glyphs of the full math font.
         /// In particular it does not have the math italic characters which breaks our variable rendering.
         /// So we first load a CGFont from the file and then convert it to a CTFont.
+        let fontURL = URL(fileURLWithPath: resourceBundleURL)
         var errorRef: Unmanaged<CFError>? = nil
-        guard CTFontManagerRegisterGraphicsFont(defaultCGFont, &errorRef) else {
+        guard CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, &errorRef) else {
             throw FontError.registerFailed
         }
+        fontURLs[mathFont] = fontURL
         let postsript  = (defaultCGFont.postScriptName as? String) ?? ""
         let cgfontName = (defaultCGFont.fullName as? String) ?? ""
         let threadName = Thread.isMainThread ? "main" : "global"
@@ -205,9 +210,10 @@ private final class BundleManager: @unchecked Sendable {
     deinit {
         ctFonts.removeAll()
         var errorRef: Unmanaged<CFError>? = nil
-        cgFonts.values.forEach { cgFont in
-            CTFontManagerUnregisterGraphicsFont(cgFont, &errorRef)
+        fontURLs.values.forEach { fontURL in
+            CTFontManagerUnregisterFontsForURL(fontURL as CFURL, .process, &errorRef)
         }
+        fontURLs.removeAll()
         cgFonts.removeAll()
     }
     public enum FontError: Error {
