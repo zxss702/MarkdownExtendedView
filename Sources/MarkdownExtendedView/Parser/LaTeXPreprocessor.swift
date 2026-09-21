@@ -38,7 +38,11 @@ nonisolated enum LaTeXPreprocessor {
         var currentIndex = text.startIndex
         var textStartIndex = text.startIndex
 
-        while currentIndex < text.endIndex {
+        // Jump straight to the next `$` instead of probing every index —
+        // grapheme-wise `index(after:)` per character made this O(n²).
+        while let dollar = text.range(of: "$", range: currentIndex..<text.endIndex)?.lowerBound {
+            currentIndex = dollar
+
             // Check for display math ($$...$$) first
             if let displayMatch = findDisplayMath(in: text, from: currentIndex) {
                 // Flush text buffer
@@ -63,7 +67,7 @@ nonisolated enum LaTeXPreprocessor {
                 continue
             }
 
-            // Regular character - move forward
+            // Not a math opener - move past this `$`
             currentIndex = text.index(after: currentIndex)
         }
 
@@ -119,11 +123,12 @@ nonisolated enum LaTeXPreprocessor {
 
     /// Find display math ($$...$$) starting at the given index.
     private static func findDisplayMath(in text: String, from startIndex: String.Index) -> Match? {
-        // Must start with "$$"
-        guard text.distance(from: startIndex, to: text.endIndex) >= 2 else { return nil }
-        
-        let startPlus2 = text.index(startIndex, offsetBy: 2)
-        guard text[startIndex..<startPlus2] == "$$" else { return nil }
+        // Must start with "$$" — O(1) check; `distance(from:to:)` walks
+        // graphemes and made the scan quadratic on long paragraphs.
+        guard text[startIndex] == "$" else { return nil }
+        let second = text.index(after: startIndex)
+        guard second < text.endIndex, text[second] == "$" else { return nil }
+        let startPlus2 = text.index(after: second)
         
         // Find closing "$$"
         if let range = text.range(of: "$$", range: startPlus2..<text.endIndex) {
