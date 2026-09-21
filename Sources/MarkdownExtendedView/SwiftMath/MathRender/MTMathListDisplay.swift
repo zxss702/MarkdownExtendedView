@@ -88,7 +88,7 @@ public class MTDisplay: NSObject, @unchecked Sendable {
 }
 
 /// Special class to be inherited from that implements the DownShift protocol
-class MTDisplayDS : MTDisplay, DownShift {
+class MTDisplayDS : MTDisplay, DownShift, @unchecked Sendable {
     
     var shiftDown: CGFloat = 0
     
@@ -97,7 +97,7 @@ class MTDisplayDS : MTDisplay, DownShift {
 // MARK: - MTCTLineDisplay
 
 /// A rendering of a single CTLine as an MTDisplay
-public class MTCTLineDisplay : MTDisplay {
+public class MTCTLineDisplay : MTDisplay, @unchecked Sendable {
     
     /// The CTLine being displayed
     public var line:CTLine!
@@ -181,7 +181,7 @@ public class MTCTLineDisplay : MTDisplay {
 
 /// An MTLine is a rendered form of MTMathList in one line.
 /// It can render itself using the draw method.
-public class MTMathListDisplay : MTDisplay {
+public class MTMathListDisplay : MTDisplay, @unchecked Sendable {
 
     /**
           The type of position for a line, i.e. subscript/superscript or regular.
@@ -273,7 +273,7 @@ public class MTMathListDisplay : MTDisplay {
 // MARK: - MTFractionDisplay
 
 /// Rendering of an MTFraction as an MTDisplay
-public class MTFractionDisplay : MTDisplay {
+public class MTFractionDisplay : MTDisplay, @unchecked Sendable {
     
     /** A display representing the numerator of the fraction. Its position is relative
      to the parent and is not treated as a sub-display.
@@ -368,7 +368,7 @@ public class MTFractionDisplay : MTDisplay {
 // MARK: - MTRadicalDisplay
 
 /// Rendering of an MTRadical as an MTDisplay
-class MTRadicalDisplay : MTDisplay {
+class MTRadicalDisplay : MTDisplay, @unchecked Sendable {
     
     /** A display representing the radicand of the radical. Its position is relative
      to the parent is not treated as a sub-display.
@@ -486,7 +486,7 @@ class MTRadicalDisplay : MTDisplay {
 // MARK: - MTGlyphDisplay
 
 /// Rendering a glyph as a display
-class MTGlyphDisplay : MTDisplayDS {
+class MTGlyphDisplay : MTDisplayDS, @unchecked Sendable {
 
     var glyph:CGGlyph!
     var font:MTFont?
@@ -538,7 +538,7 @@ class MTGlyphDisplay : MTDisplayDS {
 
 // MARK: - MTGlyphConstructionDisplay
 
-class MTGlyphConstructionDisplay:MTDisplayDS {
+class MTGlyphConstructionDisplay:MTDisplayDS, @unchecked Sendable {
     var glyphs = [CGGlyph]()
     var positions = [CGPoint]()
     var font:MTFont?
@@ -589,7 +589,7 @@ class MTGlyphConstructionDisplay:MTDisplayDS {
 // MARK: - MTLargeOpLimitsDisplay
 
 /// Rendering a large operator with limits as an MTDisplay
-class MTLargeOpLimitsDisplay : MTDisplay {
+class MTLargeOpLimitsDisplay : MTDisplay, @unchecked Sendable {
     
     /** A display representing the upper limit of the large operator. Its position is relative
      to the parent is not treated as a sub-display.
@@ -705,7 +705,7 @@ class MTLargeOpLimitsDisplay : MTDisplay {
 // MARK: - MTLineDisplay
 
 /// Rendering of an list with an overline or underline
-class MTLineDisplay : MTDisplay {
+class MTLineDisplay : MTDisplay, @unchecked Sendable {
     
     /** A display representing the inner list that is underlined. Its position is relative
      to the parent is not treated as a sub-display.
@@ -767,7 +767,7 @@ class MTLineDisplay : MTDisplay {
 // MARK: - MTAccentDisplay
 
 /// Rendering an accent as a display
-class MTAccentDisplay : MTDisplay {
+class MTAccentDisplay : MTDisplay, @unchecked Sendable {
     
     /** A display representing the inner list that is accented. Its position is relative
      to the parent is not treated as a sub-display.
