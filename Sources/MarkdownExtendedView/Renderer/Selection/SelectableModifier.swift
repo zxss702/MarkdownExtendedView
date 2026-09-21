@@ -58,6 +58,11 @@ struct SelectableModifier: ViewModifier {
                 SelectionHighlightLayer(model: model)
                     .allowsHitTesting(false)
             }
+            // Containers hit-test only where children do — rows using
+            // `.allowsHitTesting(false)` would leave dead zones, so the
+            // whole bounds must be an explicit hit region for the drag
+            // gesture to engage.
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture()
                     .onChanged { value in
