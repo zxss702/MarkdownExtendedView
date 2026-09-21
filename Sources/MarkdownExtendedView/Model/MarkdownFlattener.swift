@@ -22,8 +22,9 @@ enum MarkdownFlattener {
 
     /// Parses `content` and flattens it into blocks, reusing ids from
     /// `previousBlocks` so streaming updates keep view identity stable.
-    /// Inline LaTeX is typeset synchronously here and embedded as an
-    /// image attachment — the result is fully render-ready.
+    /// Inline LaTeX and code-reference icons are embedded as lazily
+    /// resolved `MDBakedInlineImage` payloads — their typesetting/icon
+    /// lookup happens on first render, not here.
     @MainActor
     static func flatten(_ content: String, baseURL: URL?, previousBlocks: [MDBlock]) -> [MDBlock] {
         let document = Document(parsing: content, options: [.disableSmartOpts, .disableSourcePosOpts])
@@ -374,9 +375,9 @@ enum MarkdownFlattener {
     // MARK: - Inline string builder
 
     /// Folds pieces into ONE `AttributedString`: text/emphasis/links as
-    /// attributes, inline LaTeX and code references as embedded image
-    /// attachments (a formula image, an icon + blue link label), plus the
-    /// per-glyph `MarkdownBlockMappingsAttribute` selection payload.
+    /// attributes, inline LaTeX and code references as lazy embedded
+    /// image payloads (a formula image, an icon + blue link label), plus
+    /// the run-encoded `MarkdownBlockMappingsAttribute` selection payload.
     private struct InlineStringBuilder {
         let baseURL: URL?
         private(set) var attributed = AttributedString()

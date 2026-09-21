@@ -5,9 +5,10 @@
 //  Renders a flattened inline `AttributedString` as one continuous
 //  `SwiftUI.Text`. Emphasis, links and colors are already baked as
 //  attributes; `\u{FFFC}` markers carry `MDBakedInlineImage` payloads
-//  (inline LaTeX, code-reference icons) and are rendered via
-//  `Text(Image)` concatenation — the only way SwiftUI draws images
-//  inside text, and it still produces a single shared layout.
+//  (inline LaTeX, code-reference icons) which resolve lazily on first
+//  render and draw via `Text(Image)` concatenation — the only way
+//  SwiftUI draws images inside text, and it still produces a single
+//  shared layout.
 //
 
 import SwiftUI
@@ -63,7 +64,7 @@ struct InlineContentView: View {
         flush()
 
         var text = combined ?? Text("")
-        // Re-publish the baked per-glyph payload through SwiftUI's
+        // Re-publish the baked selection payload through SwiftUI's
         // TextAttribute channel — `Text.Layout` run subscripts don't
         // see raw AttributedString keys.
         if let mappings = attributed.selectionMappings {

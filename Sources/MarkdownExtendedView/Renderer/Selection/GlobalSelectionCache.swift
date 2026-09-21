@@ -9,11 +9,12 @@
 import SwiftUI
 import Observation
 
-/// Optional per-glyph mapping attribute (one entry per laid-out glyph —
-/// an embedded attachment counts as one glyph). Applied to a `Text` via
-/// `.customAttribute`, it survives into `Text.Layout` runs where the
-/// selection builder uses it for direct char extraction instead of Core
-/// Text reflection — provided the laid-out slice count matches exactly.
+/// Optional glyph mapping attribute — run-length encoded, so one entry
+/// can cover many laid-out glyphs (an embedded attachment counts as one
+/// glyph). Applied to a `Text` via `.customAttribute`, it survives into
+/// `Text.Layout` runs where the selection builder uses it for direct
+/// char extraction instead of Core Text reflection — provided the
+/// laid-out slice count matches the total glyph count exactly.
 public struct MarkdownBlockMappingsAttribute: TextAttribute, Equatable, Hashable, Sendable {
     public typealias Value = MarkdownBlockMappingsAttribute
     public static let name = "MarkdownBlockMappingsAttribute"
@@ -157,7 +158,7 @@ enum MarkdownInlineImageKey: AttributedStringKey {
 }
 
 extension AttributedString {
-    /// The baked per-glyph selection payload, if present.
+    /// The baked run-encoded selection payload, if present.
     var selectionMappings: [GlobalSelectionCache.CharacterMapping]? {
         for run in runs {
             if let mappings = run.attributes[MarkdownBakedMappingsKey.self] {

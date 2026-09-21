@@ -97,8 +97,8 @@ struct MDTable {
 
 // Flattened inline content is a single complete `AttributedString`:
 // emphasis/links are baked as attributes, inline LaTeX and code
-// references are baked as embedded image attachments, and the
-// per-glyph `MarkdownBlockMappingsAttribute` copy payload covers the
+// references are baked as lazily-resolved image payloads, and the
+// run-encoded `MarkdownBlockMappingsAttribute` copy payload covers the
 // whole range. The renderer hands it to `SwiftUI.Text` unchanged.
 
 struct MDImage {

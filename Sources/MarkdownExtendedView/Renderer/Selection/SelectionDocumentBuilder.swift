@@ -3,7 +3,7 @@
 //
 //  Builds a SelectionDocument from collected `Text.LayoutKey` layouts and
 //  `MarkdownLayoutKey` anchors. Markdown texts may carry a
-//  `MarkdownBlockMappingsAttribute` for direct per-character extraction;
+//  `MarkdownBlockMappingsAttribute` for direct run-encoded extraction;
 //  every other text (including all external `Text` views) is mapped via
 //  guarded Core Text reflection, so nothing here can crash on layout
 //  internals changing.
