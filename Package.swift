@@ -40,7 +40,8 @@ let package = Package(
         ),
         .testTarget(
             name: "MarkdownExtendedViewTests",
-            dependencies: ["MarkdownExtendedView"]
+            dependencies: ["MarkdownExtendedView"],
+            exclude: ["FootnoteTests.swift.disabled"]
         ),
     ]
 )
