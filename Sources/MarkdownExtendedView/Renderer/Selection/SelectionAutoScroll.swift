@@ -65,7 +65,9 @@ final class SelectionAutoScrollView: NSView {
     private func startTimer() {
         guard timerBox.value == nil else { return }
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.tick()
+            // The timer fires on the main run loop — assumeIsolated keeps
+            // the tick synchronous.
+            MainActor.assumeIsolated { self?.tick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         timerBox.value = timer
@@ -115,9 +117,14 @@ final class SelectionAutoScrollView: NSView {
             }
         }
 
-        // Clamp to the document extent — no rubber-band over-scroll.
-        origin.y = min(max(origin.y, 0), max(0, clipView.documentRect.height - visible.height))
-        origin.x = min(max(origin.x, 0), max(0, clipView.documentRect.width - visible.width))
+        // Clamp to the clip view's true scroll range — `constrainBoundsRect`
+        // accounts for content insets (e.g. safeAreaInset bars), where the
+        // resting origin can be negative. A manual `max(0, …)` clamp would
+        // snap a negative resting origin up to 0 — a visible jump.
+        let constrained = clipView.constrainBoundsRect(
+            NSRect(origin: origin, size: clipView.bounds.size)
+        )
+        origin = constrained.origin
         scrolled = origin != clipView.bounds.origin
 
         if scrolled {
@@ -196,7 +203,7 @@ final class SelectionAutoScrollView: UIView {
     private func startTimer() {
         guard timerBox.value == nil else { return }
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.tick()
+            MainActor.assumeIsolated { self?.tick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         timerBox.value = timer
