@@ -6,25 +6,37 @@
 //
 //  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
+//
 
 import SwiftUI
 
 /// A SwiftUI view that renders Markdown content with LaTeX equation support.
+///
+/// The Markdown document is parsed and flattened into `[MDBlock]`
+/// **synchronously** inside `init`, so the first rendered frame already
+/// has its full content — there is no `onAppear` loading pass and no
+/// empty-to-populated height jump.
 public struct MarkdownView: View, @MainActor Equatable {
+    /// Kept for API compatibility. Parsing is always synchronous now.
     public static var synchronousParseCharacterLimit = 4096
 
     // MARK: - Initialization
 
     public init(_ content: String, baseURL: URL? = nil, isLazy: Bool = false) {
+//        #if DEBUG
+        let clock = ContinuousClock()
+        let start = clock.now
+//        #endif
+
         self.content = content
         self.baseURL = baseURL
-
         self.isLazy = isLazy
-        if let cached = MarkdownRenderSnapshot.cachedSnapshot(for: content) {
-            self._snapshot = State(initialValue: cached)
-        } else {
-            self._snapshot = State(initialValue: MarkdownRenderSnapshot.empty)
-        }
+        self.blocks = MarkdownSnapshotCache.getOrBuild(content, baseURL: baseURL)
+
+//        #if DEBUG
+        let duration = start.duration(to: clock.now)
+        print("耗时:", duration)
+//        #endif
     }
 
     // MARK: - Stored Properties
@@ -32,83 +44,24 @@ public struct MarkdownView: View, @MainActor Equatable {
     private let content: String
     private let baseURL: URL?
     private let isLazy: Bool
-    
-    // MARK: - State
-
-    @State private var snapshot: MarkdownRenderSnapshot
-    @State private var helper = ViewHelper()
+    private let blocks: [MDBlock]
 
     // MARK: - Equatable
 
     public static func == (lhs: MarkdownView, rhs: MarkdownView) -> Bool {
-        lhs.content == rhs.content && lhs.baseURL == rhs.baseURL
+        lhs.content == rhs.content && lhs.baseURL == rhs.baseURL && lhs.isLazy == rhs.isLazy
     }
 
     // MARK: - Body
-    
+
     public var body: some View {
-        MarkdownRenderer(snapshot: snapshot, isLazy: isLazy)
-//            .lineLimit(nil)
+        MarkdownRenderer(blocks: blocks, isLazy: isLazy)
             .markdownBaseURL(baseURL)
-            .onAppear {
-                if snapshot.blocks.isEmpty && !content.isEmpty {
-                    scheduleSnapshotUpdate(for: content, debounce: false)
-                }
-            }
-            .onChange(of: content) { _, newValue in
-                scheduleSnapshotUpdate(for: newValue, debounce: true)
-            }
-            .onDisappear {
-                helper.updateTask?.cancel()
-                helper.updateTask = nil
-            }
-        
-    }
-
-    // MARK: - Snapshot Updates
-
-    private func scheduleSnapshotUpdate(for content: String, debounce: Bool) {
-        let now = Date()
-        let timeSinceLastUpdate = now.timeIntervalSince(helper.lastUpdateTime)
-        let delay: TimeInterval = debounce ? max(0, 0.1 - timeSinceLastUpdate) : 0
-
-        helper.updateTask?.cancel()
-        let previousBlocks = snapshot.blocks
-
-        helper.updateTask = Task.detached(priority: .userInitiated) { [content] in
-            if delay > 0 {
-                do {
-                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                } catch {
-                    return
-                }
-            }
-
-            guard !Task.isCancelled else { return }
-            let nextSnapshot = await MarkdownRenderSnapshot.parse(content, previousBlocks: previousBlocks)
-
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                helper.lastUpdateTime = Date()
-                snapshot = nextSnapshot
-                helper.updateTask = nil
-            }
-        }
     }
 }
 
 public extension View {
     func markdownTheme(_ theme: MarkdownTheme) -> some View {
         environment(\.markdownTheme, theme)
-    }
-}
-
-// MARK: - View Helper
-
-extension MarkdownView {
-    @Observable
-    final class ViewHelper {
-        @ObservationIgnored var updateTask: Task<Void, Never>? = nil
-        @ObservationIgnored var lastUpdateTime: Date = .distantPast
     }
 }

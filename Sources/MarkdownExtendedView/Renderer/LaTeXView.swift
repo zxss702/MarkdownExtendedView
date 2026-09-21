@@ -11,13 +11,6 @@ import Synchronization
 import AppKit
 #endif
 
-struct LayoutWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 /// A view that renders LaTeX equations using SwiftMath.
 struct LaTeXView: View {
 
@@ -28,30 +21,9 @@ struct LaTeXView: View {
     var overrideFontSize: CGFloat? = nil
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var detectedWidth: CGFloat? = nil
-
-    private var effectiveMaxWidth: CGFloat? {
-        maxWidth ?? detectedWidth
-    }
 
     var body: some View {
-        if isBlock {
-            mathView
-        } else {
-            // Inline math - flows with text
-            mathView
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .preference(key: LayoutWidthPreferenceKey.self, value: geo.size.width)
-                    }
-                )
-                .onPreferenceChange(LayoutWidthPreferenceKey.self) { width in
-                    if maxWidth == nil && width > 0 {
-                        detectedWidth = width
-                    }
-                }
-        }
+        mathView
     }
 
     @ViewBuilder
@@ -63,7 +35,7 @@ struct LaTeXView: View {
             fontSize: fSize,
             textColor: textColor,
             labelMode: isBlock ? .display : .text,
-            maxWidth: effectiveMaxWidth
+            maxWidth: maxWidth
         )
         .alignmentGuide(.firstTextBaseline) { _ in
             ascent
@@ -71,11 +43,7 @@ struct LaTeXView: View {
     }
 
     private var textColor: MTColor {
-        #if os(iOS)
         return colorScheme == .dark ? .white : .black
-        #elseif os(macOS)
-        return colorScheme == .dark ? .white : .black
-        #endif
     }
 
     private var calculatedAscent: CGFloat {
@@ -102,6 +70,8 @@ final class MathDisplayCache: @unchecked Sendable {
     
     struct CachedImage {
         let image: Image
+        /// Platform image for embedding into `NSTextAttachment` runs.
+        let platformImage: MTImage
         let ascent: CGFloat
         let descent: CGFloat
         let width: CGFloat
@@ -166,7 +136,9 @@ final class MathDisplayCache: @unchecked Sendable {
         displayList.draw(context)
         
         guard let cgImage = context.makeImage() else { return nil }
-        let finalImage = Image(nsImage: NSImage(cgImage: cgImage, size: size))
+        let nsImage = NSImage(cgImage: cgImage, size: size)
+        let finalImage = Image(nsImage: nsImage)
+        let platformImage: MTImage = nsImage
         #else
         let scale = UIScreen.main.scale * 2.0
         let format = UIGraphicsImageRendererFormat()
@@ -182,9 +154,10 @@ final class MathDisplayCache: @unchecked Sendable {
             cgContext.restoreGState()
         }
         let finalImage = Image(uiImage: uiImage)
+        let platformImage: MTImage = uiImage
         #endif
         
-        let cached = CachedImage(image: finalImage, ascent: displayList.ascent, descent: displayList.descent, width: displayList.width)
+        let cached = CachedImage(image: finalImage, platformImage: platformImage, ascent: displayList.ascent, descent: displayList.descent, width: displayList.width)
         imageCache.withLock { $0[key] = cached }
         return cached
     }
@@ -213,15 +186,16 @@ struct MathView: View {
     private let inkPadding: CGFloat = 8
 
     var body: some View {
+        // Selection anchors are registered by the caller (RenderFlowElement /
+        // singleBlockLatex) with the correct `$..$`/`$$..$$` delimiters —
+        // registering here too would double-count the formula.
         if let cached = cachedResult {
             cached.image
-                .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
         } else {
             // Fallback for parsing errors
             Text(latex)
                 .font(.system(size: fontSize))
                 .foregroundColor(Color(textColor))
-                .makeCanSelectable()
         }
     }
 

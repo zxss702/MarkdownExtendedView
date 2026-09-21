@@ -17,10 +17,4 @@ final class MarkdownExtendedViewTests: XCTestCase {
         XCTAssertTrue(displayLatex.contains("$$"))
     }
 
-    func testCJKWrappingGroupsCharactersIntoBoundedRuns() throws {
-        let units = MarkdownInlineTextWrapping.units(in: "一二三四五六七八九十")
-
-        XCTAssertEqual(units, ["一二三四五六七八", "九十"])
-    }
-
 }

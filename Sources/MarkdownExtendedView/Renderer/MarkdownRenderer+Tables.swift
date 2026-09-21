@@ -36,23 +36,17 @@ fileprivate func swiftUITextAlignment(for alignment: Markdown.Table.ColumnAlignm
 // MARK: - Table Rendering
 
 struct RenderTable: View {
-    let table: Markdown.Table
-    @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
-    
+    let table: MDTable
+
     var body: some View {
-        let alignments = table.columnAlignments
-        let headerCells = Array(table.head.cells)
-        let rows: [[Markdown.Table.Cell]] = table.body.rows.map { Array($0.cells) }
-        
-        var maxCol = headerCells.count
-        for row in rows { maxCol = max(maxCol, row.count) }
-        let numCols = maxCol
-        let rowCount: Int = rows.count
-        
-        return ScrollView(.horizontal) {
+        let alignments = table.alignments
+        let headerCells = table.head
+        let rows = table.rows
+
+        let numCols = max(headerCells.count, rows.map(\.count).max() ?? 0)
+        let rowCount = rows.count
+
+        ScrollView(.horizontal) {
             Grid(horizontalSpacing: 0, verticalSpacing: 0) {
                 if !headerCells.isEmpty {
                     GridRow {
@@ -61,7 +55,7 @@ struct RenderTable: View {
                                 Rectangle().fill(Color.primary.opacity(0.15)).frame(width: 0.5)
                             }
                             RenderTableCell(
-                                cell: cell,
+                                inline: cell,
                                 isHeader: true,
                                 alignment: col < alignments.count ? alignments[col] : nil,
                                 isLastColumn: col == numCols - 1
@@ -70,7 +64,7 @@ struct RenderTable: View {
                     }
                     Divider()
                 }
-                
+
                 ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, rowCells in
                     GridRow {
                         ForEach(Array(rowCells.enumerated()), id: \.offset) { col, cell in
@@ -78,7 +72,7 @@ struct RenderTable: View {
                                 Rectangle().fill(Color.primary.opacity(0.15)).frame(width: 0.5)
                             }
                             RenderTableCell(
-                                cell: cell,
+                                inline: cell,
                                 isHeader: false,
                                 alignment: col < alignments.count ? alignments[col] : nil,
                                 isLastColumn: col == numCols - 1
@@ -100,50 +94,27 @@ struct RenderTable: View {
                     }
                 }
             }
-//            .frame(maxWidth: geometry.width)
         }
-        .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 }
 
 struct RenderTableCell: View {
-    let cell: Markdown.Table.Cell
+    let inline: AttributedString
     let isHeader: Bool
     let alignment: Markdown.Table.ColumnAlignment?
     let isLastColumn: Bool
-    
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        let frameAlign: Alignment = textAlignment(for: alignment)
-        let gridHorizontalAlign: HorizontalAlignment = horizontalAlignment(for: alignment)
-        let multilineAlign: TextAlignment = swiftUITextAlignment(for: alignment)
-        let features = computeInlineFeatures(cell)
-        
-        Group {
-            if features.contains(.hasMCodeReferences) || features.contains(.hasImages) || features.contains(.hasLinks) {
-                BuildInlineText(
-                    parent: cell,
-                    features: features,
-                    baseFont: theme.bodySwiftUIFont,
-                    baseFontSize: theme.bodyFont.pointSize
-                )
-            } else {
-                MarkdownTextBuilder(theme: theme, baseURL: baseURL, baseFont: theme.bodySwiftUIFont, baseFontSize: theme.bodyFont.pointSize)
-                    .build(from: cell)
-                    .makeCanSelectable()
-            }
-        }
-        .font(theme.bodySwiftUIFont)
-        .fontWeight(isHeader ? .semibold : nil)
-        .foregroundColor(theme.textColor)
-        .multilineTextAlignment(multilineAlign)
-        .padding(.all, 8)
-        .frame(maxHeight: .infinity, alignment: frameAlign)
-        .gridColumnAlignment(gridHorizontalAlign)
+        InlineContentView(attributed: inline)
+            .font(theme.bodySwiftUIFont)
+            .fontWeight(isHeader ? .semibold : nil)
+            .foregroundColor(theme.textColor)
+            .multilineTextAlignment(swiftUITextAlignment(for: alignment))
+            .padding(.all, 8)
+            .frame(maxHeight: .infinity, alignment: textAlignment(for: alignment))
+            .gridColumnAlignment(horizontalAlignment(for: alignment))
     }
 }

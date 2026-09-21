@@ -8,6 +8,7 @@ import XCTest
 import Markdown
 @testable import MarkdownExtendedView
 
+@MainActor
 final class SyntaxHighlightingTests: XCTestCase {
 
     // MARK: - Parser Detection Tests

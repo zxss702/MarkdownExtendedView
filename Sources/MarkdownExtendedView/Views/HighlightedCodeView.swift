@@ -2,104 +2,85 @@
 //  MarkdownExtendedView
 //
 //  Created by 知阳 on 2026-02-07.
-// Licensed under MIT License
+//  Licensed under MIT License
+//
 
 import SwiftUI
 
 /// A view that renders syntax-highlighted code.
 ///
-/// This view tokenizes code using the ``SyntaxHighlighter`` and renders
-/// each token with the appropriate color from the theme's ``SyntaxColors``.
+/// Tokenization is fully synchronous: either pre-tokenized `lines` are
+/// passed in (the `MDBlock` path) or the public initializer tokenizes
+/// inline with a snapshot cache short-circuit. No `.task`, no second
+/// frame — the first render already shows highlighted code.
 public struct HighlightedCodeView: View {
 
     private let code: String
     private let language: String?
     private let theme: MarkdownTheme
-    
-    @State private var resolvedLines: [[Token]]?
+    private let lines: [[Token]]
 
+    /// Public entry point — tokenizes synchronously (cache first).
     public init(code: String, language: String?, theme: MarkdownTheme) {
         self.code = code
         self.language = language
         self.theme = theme
-        
-        let normalizedCode = code.trimmingCharacters(in: .newlines)
-        let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
-        if let cachedLines = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey as NSString)?.lines {
-            self._resolvedLines = State(initialValue: cachedLines)
-        } else {
-            self._resolvedLines = State(initialValue: nil)
-        }
+        self.lines = Self.resolveLines(code: code, language: language)
     }
-    
+
+    /// Render-model entry point — lines were tokenized during flattening.
+    init(code: String, language: String?, theme: MarkdownTheme, lines: [[Token]]) {
+        self.code = code
+        self.language = language
+        self.theme = theme
+        self.lines = lines
+    }
+
     public var body: some View {
-        Group {
-            if let resolvedLines {
-                buildText(from: resolvedLines)
-            } else {
-                buildPlainCodeText()
-            }
-        }
-        .font(theme.codeBlockSwiftUIFont)
-        .codeSelectionTextPassThrough()
-        .task(id: code) {
-            let normalizedCode = code.trimmingCharacters(in: .newlines)
-            let cacheKey = Self.cacheKey(for: normalizedCode, language: language)
-            
-            let computedLines = await Task.detached(priority: .userInitiated) {
-                Self.makeHighlightedLines(code: normalizedCode, language: language)
-            }.value
-            
-            await MainActor.run {
-                HighlightedCodeSnapshotCache.shared.setObject(
-                    HighlightedCodeSnapshot(lines: computedLines),
-                    forKey: cacheKey as NSString
-                )
-                self.resolvedLines = computedLines
-            }
-        }
+        buildText(from: lines)
+            .font(theme.codeBlockSwiftUIFont)
+            .customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
+            .selectionTextPassThrough()
     }
-    
+
+    // MARK: - Text assembly
+
+    /// One run-length entry per token — O(tokens), not O(characters).
+    /// `MDGlyphCursor` expands the per-glyph slicing lazily when the
+    /// selection document consumes it.
+    private var mappings: [GlobalSelectionCache.CharacterMapping] {
+        var result: [GlobalSelectionCache.CharacterMapping] = []
+        result.reserveCapacity(lines.reduce(0) { $0 + $1.count } + lines.count)
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                result.append(.init(char: "\n", glyphCount: 0, isLineBreak: true))
+            }
+            for token in line where !token.text.isEmpty {
+                result.append(.init(
+                    char: token.text[...],
+                    glyphCount: token.text.count,
+                    slicesText: true
+                ))
+            }
+        }
+        return result
+    }
+
     private func buildText(from lines: [[Token]]) -> SwiftUI.Text {
         var combinedAttr = AttributedString()
-        var offset = 0
-        var mappings: [GlobalSelectionCache.CharacterMapping] = []
-        
+
         for (index, line) in lines.enumerated() {
             if index > 0 {
                 combinedAttr.append(AttributedString("\n"))
-                mappings.append(.init(index: offset, char: "\n"))
-                offset += 1
             }
-            if !line.isEmpty {
-                for token in line {
-                    let color = Self.color(for: token.type, theme: theme)
-                    for char in token.text {
-                        var charAttr = AttributedString(String(char))
-                        charAttr.foregroundColor = color
-                        combinedAttr.append(charAttr)
-                        mappings.append(.init(index: offset, char: String(char)))
-                        offset += 1
-                    }
-                }
+            for token in line {
+                var tokenAttr = AttributedString(token.text)
+                tokenAttr.foregroundColor = Self.color(for: token.type, theme: theme)
+                combinedAttr.append(tokenAttr)
             }
         }
-        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
-    }
-    
-    private func buildPlainCodeText() -> SwiftUI.Text {
-        var combinedAttr = AttributedString()
-        let plainString = code.trimmingCharacters(in: .newlines)
-        var offset = 0
-        var mappings: [GlobalSelectionCache.CharacterMapping] = []
-        for char in plainString {
-            var charAttr = AttributedString(String(char))
-            charAttr.foregroundColor = theme.textColor
-            combinedAttr.append(charAttr)
-            mappings.append(.init(index: offset, char: String(char)))
-            offset += 1
-        }
-        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
+
+        return SwiftUI.Text(combinedAttr)
     }
 
     private static func color(for tokenType: TokenType, theme: MarkdownTheme) -> Color {
@@ -121,12 +102,33 @@ public struct HighlightedCodeView: View {
         }
     }
 
+    // MARK: - Tokenization + cache
+
+    /// Synchronous resolve: snapshot cache hit → stored lines; otherwise
+    /// tokenize on the spot and store the result. `nonisolated` — the
+    /// NSCache underneath is internally synchronized.
+    nonisolated static func resolveLines(code: String, language: String?) -> [[Token]] {
+        let normalizedCode = code.trimmingCharacters(in: .newlines)
+        let cacheKey = Self.cacheKey(for: normalizedCode, language: language) as NSString
+
+        if let cached = HighlightedCodeSnapshotCache.shared.object(forKey: cacheKey) {
+            return cached.lines
+        }
+
+        let lines = makeHighlightedLines(code: normalizedCode, language: language)
+        HighlightedCodeSnapshotCache.shared.setObject(
+            HighlightedCodeSnapshot(lines: lines),
+            forKey: cacheKey
+        )
+        return lines
+    }
+
     nonisolated private static func makeHighlightedLines(code: String, language: String?) -> [[Token]] {
         let tokens = SyntaxHighlighter().tokenize(code, language: language)
         return splitIntoLines(tokens)
     }
 
-    static func cacheKey(for code: String, language: String?) -> String {
+    nonisolated static func cacheKey(for code: String, language: String?) -> String {
         var hasher = Hasher()
         hasher.combine(code)
         let codeHash = hasher.finalize()
@@ -135,26 +137,26 @@ public struct HighlightedCodeView: View {
 
     /// Splits tokens into lines, preserving token structure.
     nonisolated static func splitIntoLines(_ tokens: [Token]) -> [[Token]] {
-            var lines: [[Token]] = [[]]
+        var lines: [[Token]] = [[]]
 
-            for token in tokens {
-                let parts = token.text.components(separatedBy: "\n")
-                for (index, part) in parts.enumerated() {
-                    if index > 0 {
-                        lines.append([])
-                    }
-                    if !part.isEmpty {
-                        lines[lines.count - 1].append(Token(text: part, type: token.type))
-                    }
+        for token in tokens {
+            let parts = token.text.components(separatedBy: "\n")
+            for (index, part) in parts.enumerated() {
+                if index > 0 {
+                    lines.append([])
+                }
+                if !part.isEmpty {
+                    lines[lines.count - 1].append(Token(text: part, type: token.type))
                 }
             }
+        }
 
-            return lines
+        return lines
     }
 }
 
 private final class HighlightedCodeSnapshotCache {
-    @MainActor static let shared: NSCache<NSString, HighlightedCodeSnapshot> = {
+    nonisolated(unsafe) static let shared: NSCache<NSString, HighlightedCodeSnapshot> = {
         let cache = NSCache<NSString, HighlightedCodeSnapshot>()
         cache.countLimit = 128
         return cache
@@ -166,17 +168,5 @@ private final class HighlightedCodeSnapshot: NSObject {
 
     init(lines: [[Token]]) {
         self.lines = lines
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func codeSelectionTextPassThrough() -> some View {
-#if os(macOS)
-        self
-            .pointerStyle(.horizontalText)
-#else
-        self
-#endif
     }
 }

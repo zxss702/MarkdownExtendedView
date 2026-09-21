@@ -3,6 +3,7 @@
 //
 //  Created by 知阳 on 2026-02-07.
 // Licensed under MIT License
+//
 
 import SwiftUI
 import BeautifulMermaid
@@ -18,11 +19,11 @@ import UIKit
 final class MermaidImageCache {
     static let shared = MermaidImageCache()
     private let cache = NSCache<NSString, BMImage>()
-    
+
     private init() {
         cache.countLimit = 100
     }
-    
+
     func getImage(for code: String, theme: DiagramTheme) -> BMImage? {
         // We use a simple hash of the code as the key.
         // If theme properties change significantly, you might want to include theme hash in the key.
@@ -30,7 +31,7 @@ final class MermaidImageCache {
         if let cached = cache.object(forKey: key) {
             return cached
         }
-        
+
         let renderer = MermaidImageRenderer(
             theme: theme,
             config: LayoutConfig(
@@ -53,16 +54,12 @@ final class MermaidImageCache {
 struct MermaidView: View {
     let code: String
     let theme: MarkdownTheme
-    let viewWidth: CGFloat
-    
-    @State private var diagramImage: BMImage? = nil
-    
-    init(code: String, theme: MarkdownTheme, viewWidth: CGFloat) {
+    private let diagramTheme: DiagramTheme
+
+    init(code: String, theme: MarkdownTheme) {
         self.code = code
         self.theme = theme
-        self.viewWidth = viewWidth
-        
-        // 1. Convert MarkdownTheme to DiagramTheme
+
         #if canImport(AppKit)
         let fg = NSColor(theme.textColor)
         let sg = NSColor(theme.secondaryTextColor)
@@ -70,8 +67,8 @@ struct MermaidView: View {
         let fg = UIColor(theme.textColor)
         let sg = UIColor(theme.secondaryTextColor)
         #endif
-        
-        let diagramTheme = DiagramTheme(
+
+        self.diagramTheme = DiagramTheme(
             background: .windowBackgroundColor,
             foreground: fg,
             line: fg,
@@ -84,42 +81,43 @@ struct MermaidView: View {
             cornerRadius: 16,
             transparent: true
         )
-        
-        // 2. Synchronously fetch or parse the image
-        if let image = MermaidImageCache.shared.getImage(for: code, theme: diagramTheme) {
-            self._diagramImage = State(initialValue: image)
-        } else {
-            self._diagramImage = State(initialValue: nil)
-        }
     }
-    
+
     var body: some View {
-        if let image = diagramImage {
+        // Resolved synchronously: cache hit is O(1); a miss renders inline.
+        // No @State — the image must always track `code` for stable-id
+        // streaming updates.
+        if let image = MermaidImageCache.shared.getImage(for: code, theme: diagramTheme) {
             #if canImport(AppKit)
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
-                .makeCanSelectable(isBlock: true, blockText: code)
-            
+                .makeCanSelectable(isBlock: true, blockText: code, richImage: image)
                 .frame(maxWidth: image.size.width) // Use logical size
-                .frame(maxWidth: .infinity, alignment: .center)
+                .contextMenu { mermaidMenu(image: image) }
             #elseif canImport(UIKit)
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
-                .makeCanSelectable(isBlock: true, blockText: code)
-            
+                .makeCanSelectable(isBlock: true, blockText: code, richImage: image)
                 .frame(maxWidth: image.size.width)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .contextMenu { mermaidMenu(image: image) }
             #endif
         } else {
             SwiftUI.Text(code)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(theme.secondaryTextColor)
-            
                 .makeCanSelectable()
-            
-                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    @ViewBuilder
+    private func mermaidMenu(image: BMImage) -> some View {
+        Button("拷贝为图像") {
+            MarkdownCopy.image(image)
+        }
+        Button("拷贝为 Markdown") {
+            MarkdownCopy.text("```mermaid\n\(code)\n```")
         }
     }
 }

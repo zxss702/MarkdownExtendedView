@@ -9,43 +9,61 @@
 import SwiftUI
 import Markdown
 
-/// Renders a parsed Markdown document to SwiftUI views.
+/// Renders the flattened `[MDBlock]` model to SwiftUI views. The body is
+/// a pure mapping — all parsing, flattening and tokenization already
+/// happened in `MarkdownView.init`.
 struct MarkdownRenderer: View {
-    let snapshot: MarkdownRenderSnapshot
+    let blocks: [MDBlock]
     let isLazy: Bool
-    
+
     @Environment(\.markdownTheme) private var theme
-    
+    @Environment(\.markdownLinkHandler) private var linkHandler
+    @Environment(\.markdownMCodeReferenceHandler) private var codeReferenceHandler
+
     var body: some View {
         if isLazy {
             LazyVStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
-                ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
-                    RenderBlock(
-                        markup: block.markup,
-                        features: block.features
-                    )
-                    .transition(.markdownBlockAppear)
-                    .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                }
+                blockList
             }
             .lineSpacing(theme.paragraphSpacing)
             .foregroundColor(theme.textColor)
+            .environment(\.openURL, openURLAction)
         } else {
             VStack(alignment: theme.textAlignment, spacing: theme.paragraphSpacing) {
-                
-                ForEach(Array(snapshot.blocks.enumerated()), id: \.element.id) { index, block in
-                    RenderBlock(
-                        markup: block.markup,
-                        features: block.features
-                    )
-                    
-                    .padding(.bottom, index < snapshot.blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
-                }
-                .transition(.markdownBlockAppear)
+                blockList
             }
             .lineSpacing(theme.paragraphSpacing)
             .foregroundColor(theme.textColor)
-            
+            .environment(\.openURL, openURLAction)
+        }
+    }
+
+    private var blockList: some View {
+        ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+            RenderBlock(block: block)
+                .equatable()
+                .padding(.bottom, index < blocks.count - 1 ? max(0, theme.paragraphSpacing - 8) : 0)
+        }
+    }
+
+    /// Bridge `.link` attributed-string taps into the tap handlers.
+    /// `file://` URLs carrying line ranges are inline code references —
+    /// they go to `onMCodeReferenceTap` (or open the plain file as a
+    /// fallback); everything else goes to `onLinkTap` / the system.
+    private var openURLAction: OpenURLAction {
+        OpenURLAction { url in
+            if url.isFileURL, let reference = MCodeReference(url.absoluteString) {
+                if let codeReferenceHandler {
+                    codeReferenceHandler(reference)
+                    return .handled
+                }
+                return .systemAction(reference.url)
+            }
+            if let linkHandler {
+                linkHandler(url)
+                return .handled
+            }
+            return .systemAction
         }
     }
 }
@@ -97,27 +115,5 @@ extension View {
 #else
         self
 #endif
-    }
-}
-
-// MARK: - Block Appear Transition
-
-private struct MarkdownBlockAppearModifier: ViewModifier {
-    let isActive: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .blur(radius: isActive ? 4 : 0)
-            .scaleEffect(isActive ? 0.01 : 1, anchor: .bottomLeading)
-            .opacity(isActive ? 0 : 1)
-    }
-}
-
-extension AnyTransition {
-    static var markdownBlockAppear: AnyTransition {
-        .modifier(
-            active: MarkdownBlockAppearModifier(isActive: true),
-            identity: MarkdownBlockAppearModifier(isActive: false)
-        )
     }
 }

@@ -2,6 +2,8 @@
 //  MarkdownRenderer+Blocks.swift
 //  MarkdownExtendedView
 //
+//  Block-level dispatch over the flattened `MDBlock` model — no Markup
+//  traversal happens in the render layer.
 
 import SwiftUI
 import Markdown
@@ -9,194 +11,140 @@ import Markdown
 // MARK: - Block Rendering
 
 struct RenderBlock: View {
-    let markup: any Markup
-    let features: MarkdownBlockFeatures
+    let block: MDBlock
+
     @Environment(\.markdownTheme) private var theme
     @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        if let heading = markup as? Heading {
-            RenderHeading(heading: heading, features: features)
-        } else if let paragraph = markup as? Paragraph {
-            RenderParagraph(paragraph: paragraph, features: features)
-        } else if let codeBlock = markup as? CodeBlock {
-            RenderCodeBlock(codeBlock: codeBlock)
-        } else if let blockQuote = markup as? BlockQuote {
-            RenderBlockQuote(blockQuote: blockQuote)
-        } else if let orderedList = markup as? OrderedList {
-            RenderOrderedList(list: orderedList, depth: 0)
-        } else if let unorderedList = markup as? UnorderedList {
-            RenderUnorderedList(list: unorderedList, depth: 0)
-        } else if let table = markup as? Markdown.Table {
-            RenderTable(table: table)
-        } else if markup is ThematicBreak {
-            Divider().padding(.vertical, 8)
-        } else if let htmlBlock = markup as? HTMLBlock {
-            SwiftUI.Text(
-                AttributedString(
-                    NSAttributedString(
-                        html: htmlBlock.rawHTML.data(using: .utf8) ?? Data(),
-                        documentAttributes: nil
-                    ) ?? NSAttributedString(string: htmlBlock.rawHTML)
+        switch block.content {
+        case .heading(let level, let attributed):
+            RenderHeading(level: level, attributed: attributed)
+
+        case .text(let attributed):
+            InlineContentView(attributed: attributed)
+
+        case .image(let image):
+            // Registers its own block anchor (with the loaded image for
+            // rich copies) and its context menu.
+            MarkdownImageView(image: image, theme: theme, baseURL: baseURL)
+
+        case .latexBlock(let latex):
+            LaTeXView(latex: latex, isBlock: true, theme: theme)
+                .makeCanSelectable(
+                    isBlock: true,
+                    blockText: "$$\(latex)$$",
+                    richImage: MathDisplayCache.shared.getCachedImage(
+                        latex: latex,
+                        fontSize: theme.latexBlockFontSize,
+                        isBlock: true,
+                        textColor: colorScheme == .dark ? .white : .black
+                    )?.platformImage
                 )
-            )
-            .font(theme.codeSwiftUIFont)
-            .foregroundColor(theme.secondaryTextColor)
-            .selectionTextPassThrough()
+
+        case .codeBlock(let code):
+            RenderRegularCodeBlock(code: code)
+
+        case .mermaid(let code):
+            // MermaidView registers its own block anchor (with the
+            // rendered image for rich copies) and its context menu.
+            MermaidView(code: code, theme: theme)
+
+        case .blockQuote(let children):
+            RenderBlockQuote(children: children)
+
+        case .orderedList(let startIndex, let items):
+            RenderOrderedList(startIndex: startIndex, items: items, depth: 0)
+
+        case .unorderedList(let items):
+            RenderUnorderedList(items: items, depth: 0)
+
+        case .table(let table):
+            RenderTable(table: table)
+
+        case .thematicBreak:
+            Divider().padding(.horizontal, 8)
+
+        case .htmlBlock(let rawHTML):
+            RenderHTMLBlock(rawHTML: rawHTML)
         }
+    }
+}
+
+extension RenderBlock: @preconcurrency Equatable {
+    /// `MDBlock` equality is `id + signature`, so unchanged blocks skip
+    /// body evaluation during streaming updates.
+    static func == (lhs: RenderBlock, rhs: RenderBlock) -> Bool {
+        lhs.block == rhs.block
     }
 }
 
 // MARK: - Heading
 
 struct RenderHeading: View {
-    let heading: Heading
-    let features: MarkdownBlockFeatures
-    @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    
-    var body: some View {
-        let nativeFont = theme.headingFont(level: heading.level)
-        let baseFontSize = nativeFont.pointSize
-        
-        if features.contains(.hasMCodeReferences) || features.contains(.hasImages) || features.contains(.hasLinks) {
-            BuildInlineText(parent: heading, features: features, baseFont: theme.headingSwiftUIFont(level: heading.level), baseFontSize: baseFontSize)
-        } else {
-            MarkdownTextBuilder(theme: theme, baseURL: baseURL, baseFont: theme.headingSwiftUIFont(level: heading.level), baseFontSize: baseFontSize).build(from: heading)
-                .font(theme.headingSwiftUIFont(level: heading.level))
-                .makeCanSelectable()
-        }
-    }
-}
+    let level: Int
+    let attributed: AttributedString
 
-// MARK: - Paragraph
-
-struct RenderParagraph: View {
-    let paragraph: Paragraph
-    let features: MarkdownBlockFeatures
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    
+
     var body: some View {
-        let plainText = paragraph.plainText
-        if plainText.hasPrefix("$$") && plainText.hasSuffix("$$") {
-            let latex = String(plainText.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespacesAndNewlines)
-            LaTeXView(latex: latex, isBlock: true, theme: theme)
-                .makeCanSelectable(isBlock: true, blockText: "$\(latex)$")
-        } else if features.contains(.hasMCodeReferences) || features.contains(.hasImages) || features.contains(.hasLinks) {
-            BuildInlineText(parent: paragraph, features: features, baseFont: theme.bodySwiftUIFont, baseFontSize: theme.bodyFont.pointSize)
-        } else {
-            MarkdownTextBuilder(theme: theme, baseURL: baseURL, baseFont: theme.bodySwiftUIFont, baseFontSize: theme.bodyFont.pointSize).build(from: paragraph)
-                .font(theme.bodySwiftUIFont)
-                .makeCanSelectable()
-        }
+        InlineContentView(
+            attributed: attributed,
+            font: theme.headingFont(level: level)
+        )
     }
 }
 
 // MARK: - Code Block
 
-struct RenderCodeBlock: View {
-    let codeBlock: CodeBlock
-    @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
-
-    var body: some View {
-        if codeBlock.language == "mermaid" {
-            RenderMermaidBlock(codeBlock: codeBlock)
-        } else {
-            RenderRegularCodeBlock(codeBlock: codeBlock)
-        }
-    }
-}
-
-struct RenderMermaidBlock: View {
-    let codeBlock: CodeBlock
-    @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
-    
-    var body: some View {
-        MermaidView(code: codeBlock.code, theme: theme, viewWidth: 1024)
-    }
-}
-
 struct RenderRegularCodeBlock: View {
-    let codeBlock: CodeBlock
+    let code: MDCodeBlock
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        buildCodeText()
+        HighlightedCodeView(code: code.code, language: code.language, theme: theme, lines: code.lines)
             .makeCanSelectable()
             .contentTransition(.numericText())
             .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: false))
-    }
-    
-    @ViewBuilder
-    private func buildCodeText() -> some View {
-        if codeBlock.language != nil {
-            HighlightedCodeView(
-                code: codeBlock.code,
-                language: codeBlock.language,
-                theme: theme
-            )
-        } else {
-            buildPlainCodeText()
-        }
-    }
-    
-    private func buildPlainCodeText() -> SwiftUI.Text {
-        var combinedAttr = AttributedString()
-        let plainString = codeBlock.code.trimmingCharacters(in: .newlines)
-        var offset = 0
-        var mappings: [GlobalSelectionCache.CharacterMapping] = []
-        for char in plainString {
-            var charAttr = AttributedString(String(char))
-            charAttr.font = theme.codeBlockSwiftUIFont
-            charAttr.foregroundColor = theme.textColor
-            combinedAttr.append(charAttr)
-            mappings.append(.init(index: offset, char: String(char)))
-            offset += 1
-        }
-        return SwiftUI.Text(combinedAttr).customAttribute(MarkdownBlockMappingsAttribute(mappings: mappings))
+            .contextMenu {
+                Button("拷贝全文") {
+                    MarkdownCopy.text(code.code)
+                }
+            }
     }
 }
 
-struct RenderMCodeReferences: View {
-    let references: [MCodeReference]
+// MARK: - HTML
+
+struct RenderHTMLBlock: View {
+    let rawHTML: String
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(references.enumerated()), id: \.offset) { _, reference in
-                MCodeReferenceBlockView(
-                    reference: reference,
-                    theme: theme,
-                    tapHandler: MCodeReferenceHandler
-                )
-            }
-        }
+        SwiftUI.Text(
+            AttributedString(
+                NSAttributedString(
+                    html: rawHTML.data(using: .utf8) ?? Data(),
+                    documentAttributes: nil
+                ) ?? NSAttributedString(string: rawHTML)
+            )
+        )
+        .font(theme.codeSwiftUIFont)
+        .foregroundColor(theme.secondaryTextColor)
+        .makeCanSelectable()
     }
 }
 
 // MARK: - Block Quote
 
 struct RenderBlockQuote: View {
-    let blockQuote: BlockQuote
+    let children: [MDBlock]
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
+    @Environment(\.markdownSelectionLinePrefix) private var linePrefix
 
     var body: some View {
         HStack(spacing: 0) {
@@ -205,15 +153,12 @@ struct RenderBlockQuote: View {
                 .frame(width: 4)
 
             VStack(alignment: .leading, spacing: theme.paragraphSpacing / 2) {
-                ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
-                    RenderBlock(
-                        markup: child,
-                        features: computeInlineFeatures(child),
-                        
-                    )
+                ForEach(children) { child in
+                    RenderBlock(block: child).equatable()
                 }
             }
             .padding(.leading, 12)
+            .environment(\.markdownSelectionLinePrefix, linePrefix + "> ")
         }
         .padding(.vertical, 4)
     }
@@ -227,17 +172,16 @@ func bulletForDepth(_ depth: Int) -> String {
 }
 
 struct RenderOrderedList: View {
-    let list: OrderedList
+    let startIndex: Int
+    let items: [MDListItem]
     let depth: Int
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.listItemSpacing) {
-            ForEach(Array(list.listItems.enumerated()), id: \.offset) { index, item in
-                RenderListItem(item: item, bullet: "\(index + Int(list.startIndex)).", depth: depth)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                RenderListItem(item: item, bullet: "\(index + startIndex).", depth: depth)
             }
         }
         .padding(.leading, depth > 0 ? theme.indentation : 0)
@@ -245,16 +189,14 @@ struct RenderOrderedList: View {
 }
 
 struct RenderUnorderedList: View {
-    let list: UnorderedList
+    let items: [MDListItem]
     let depth: Int
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.listItemSpacing) {
-            ForEach(Array(list.listItems.enumerated()), id: \.offset) { _, item in
+            ForEach(items) { item in
                 if item.checkbox != nil {
                     RenderTaskListItem(item: item, depth: depth)
                 } else {
@@ -267,33 +209,23 @@ struct RenderUnorderedList: View {
 }
 
 struct RenderListItem: View {
-    let item: ListItem
+    let item: MDListItem
     let bullet: String
     let depth: Int
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
-            let t = Text(bullet)
+            Text(bullet)
                 .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
-            
-           
-            if item.parent is OrderedList {
-                t
-                    .contentTransition(.numericText(countsDown: true))
-                    .makeCanSelectable(isBlock: true, blockText: bullet)
-            } else {
-                t
-                    .contentTransition(.numericText(countsDown: true))
-            }
+                .contentTransition(.numericText(countsDown: true))
+                .makeCanSelectable(isBlock: true, blockText: bullet + " ")
 
             VStack(alignment: .leading, spacing: theme.listItemSpacing) {
-                ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                    RenderListChildBlock(markup: child, depth: depth)
+                ForEach(item.children) { child in
+                    RenderListChildBlock(block: child, depth: depth)
                 }
             }
         }
@@ -301,44 +233,45 @@ struct RenderListItem: View {
 }
 
 struct RenderTaskListItem: View {
-    let item: ListItem
+    let item: MDListItem
     let depth: Int
+
     @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: item.checkbox?.isChecked == true ? "checkmark.square.fill" : "square")
+            Image(systemName: item.checkbox == .checked ? "checkmark.square.fill" : "square")
                 .font(theme.bodySwiftUIFont)
-                .foregroundColor(item.checkbox?.isChecked == true ? theme.linkColor : theme.secondaryTextColor)
+                .foregroundColor(item.checkbox == .checked ? theme.linkColor : theme.secondaryTextColor)
                 .frame(width: 20, alignment: .trailing)
+                .makeCanSelectable(
+                    isBlock: true,
+                    blockText: item.checkbox == .checked ? "[x] " : "[ ] "
+                )
 
             VStack(alignment: .leading, spacing: theme.listItemSpacing) {
-                ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                    RenderListChildBlock(markup: child, depth: depth)
+                ForEach(item.children) { child in
+                    RenderListChildBlock(block: child, depth: depth)
                 }
             }
         }
     }
 }
 
+/// List children are pre-flattened blocks; nested lists get `depth + 1`
+/// for indentation and bullet style.
 struct RenderListChildBlock: View {
-    let markup: any Markup
+    let block: MDBlock
     let depth: Int
-    @Environment(\.markdownTheme) private var theme
-    @Environment(\.markdownBaseURL) private var baseURL
-    @Environment(\.markdownLinkHandler) private var linkHandler
-    @Environment(\.markdownMCodeReferenceHandler) private var MCodeReferenceHandler
 
     var body: some View {
-        if let nestedOrdered = markup as? OrderedList {
-            RenderOrderedList(list: nestedOrdered, depth: depth + 1)
-        } else if let nestedUnordered = markup as? UnorderedList {
-            RenderUnorderedList(list: nestedUnordered, depth: depth + 1)
-        } else {
-            RenderBlock(markup: markup, features: computeInlineFeatures(markup))
+        switch block.content {
+        case .orderedList(let startIndex, let items):
+            RenderOrderedList(startIndex: startIndex, items: items, depth: depth + 1)
+        case .unorderedList(let items):
+            RenderUnorderedList(items: items, depth: depth + 1)
+        default:
+            RenderBlock(block: block).equatable()
         }
     }
 }
