@@ -18,19 +18,11 @@ enum MarkdownSnapshotCache {
     /// `baseURL` participates in the cache key because link destinations
     /// are resolved during flattening.
     static func getOrBuild(_ content: String, baseURL: URL?) -> [MDBlock] {
-        #if DEBUG
-        let clock = ContinuousClock()
-        let start = clock.now
-        #endif
         let key = "\(baseURL?.absoluteString ?? "")\u{0}\(content)" as NSString
         if let cached = cache.object(forKey: key) {
             latest = cached.blocks
             return cached.blocks
         }
-        #if DEBUG
-        let duration = start.duration(to: clock.now)
-        print("cache耗时:", duration)
-        #endif
         let blocks = MarkdownFlattener.flatten(content, baseURL: baseURL, previousBlocks: latest ?? [])
         cache.setObject(MDBlocksBox(blocks: blocks), forKey: key)
         latest = blocks

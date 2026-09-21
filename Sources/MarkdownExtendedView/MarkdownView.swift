@@ -23,20 +23,10 @@ public struct MarkdownView: View, @MainActor Equatable {
     // MARK: - Initialization
 
     public init(_ content: String, baseURL: URL? = nil, isLazy: Bool = false) {
-//        #if DEBUG
-        let clock = ContinuousClock()
-        let start = clock.now
-//        #endif
-
         self.content = content
         self.baseURL = baseURL
         self.isLazy = isLazy
         self.blocks = MarkdownSnapshotCache.getOrBuild(content, baseURL: baseURL)
-
-//        #if DEBUG
-        let duration = start.duration(to: clock.now)
-        print("耗时:", duration)
-//        #endif
     }
 
     // MARK: - Stored Properties

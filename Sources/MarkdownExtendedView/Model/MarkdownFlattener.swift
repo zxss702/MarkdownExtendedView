@@ -20,40 +20,14 @@ import UIKit
 
 enum MarkdownFlattener {
 
-    #if PROFILING
-    /// Temporary phase instrumentation — compiled only with -DPROFILING.
-    nonisolated(unsafe) static var benchPieces: Duration = .zero
-    nonisolated(unsafe) static var benchBuilder: Duration = .zero
-    nonisolated(unsafe) static var benchAppendBlock: Duration = .zero
-    static func benchReset() { benchPieces = .zero; benchBuilder = .zero; benchAppendBlock = .zero }
-    static func benchReport() {
-        func ms(_ d: Duration) -> String { String(format: "%.3fms", Double(d.components.attoseconds) / 1e15 + Double(d.components.seconds) * 1000) }
-        print("[PROF] pieces=\(ms(benchPieces)) builder=\(ms(benchBuilder)) appendBlock=\(ms(benchAppendBlock))")
-    }
-    #endif
-
     /// Parses `content` and flattens it into blocks, reusing ids from
     /// `previousBlocks` so streaming updates keep view identity stable.
     /// Inline LaTeX is typeset synchronously here and embedded as an
     /// image attachment — the result is fully render-ready.
     @MainActor
     static func flatten(_ content: String, baseURL: URL?, previousBlocks: [MDBlock]) -> [MDBlock] {
-        #if DEBUG
-        let clock = ContinuousClock()
-        let start = clock.now
-        #endif
         let document = Document(parsing: content, options: [.disableSmartOpts, .disableSourcePosOpts])
-        #if DEBUG
-        let duration = start.duration(to: clock.now)
-        print("解析耗时:", duration)
-        let clock2 = ContinuousClock()
-        let start2 = clock2.now
-        #endif
         let pool = ReusePool(previous: previousBlocks)
-        #if DEBUG
-        let duration2 = start2.duration(to: clock2.now)
-        print("Reuse耗时:", duration2)
-        #endif
         return flattenBlocks(document.children, previous: previousBlocks, baseURL: baseURL, pool: pool)
     }
 
@@ -65,10 +39,6 @@ enum MarkdownFlattener {
         baseURL: URL?,
         pool: ReusePool
     ) -> [MDBlock] {
-        #if DEBUG
-        let clock = ContinuousClock()
-        let start = clock.now
-        #endif
         var blocks: [MDBlock] = []
         blocks.reserveCapacity(previous.count)
         for child in children {
@@ -91,10 +61,6 @@ enum MarkdownFlattener {
                 appendBlock(content, into: &blocks, previous: previous, pool: pool)
             }
         }
-        #if DEBUG
-        let duration = start.duration(to: clock.now)
-        print("flatten耗时:", duration)
-        #endif
         return blocks
     }
 
@@ -104,16 +70,10 @@ enum MarkdownFlattener {
         previous: [MDBlock],
         pool: ReusePool
     ) {
-        #if PROFILING
-        let a0 = ContinuousClock.now
-        #endif
         let signature = MDBlock.signature(of: content)
         let previousAtPosition = blocks.count < previous.count ? previous[blocks.count] : nil
         let id = pool.reuseID(kind: content.kind, signature: signature, previous: previousAtPosition)
         blocks.append(MDBlock(id: id, kind: content.kind, signature: signature, content: content))
-        #if PROFILING
-        MarkdownFlattener.benchAppendBlock += a0.duration(to: ContinuousClock.now)
-        #endif
     }
 
     private static func blockContent(
@@ -354,16 +314,7 @@ enum MarkdownFlattener {
         var contents: [MDBlockContent] = []
         var builder = InlineStringBuilder(baseURL: baseURL)
 
-        #if PROFILING
-        let pc0 = ContinuousClock.now
-        #endif
-        let pieces = collectPieces(paragraph)
-        #if PROFILING
-        MarkdownFlattener.benchPieces += pc0.duration(to: ContinuousClock.now)
-        let pb0 = ContinuousClock.now
-        #endif
-
-        for piece in pieces {
+        for piece in collectPieces(paragraph) {
             switch piece {
             case .image(let image):
                 if let inline = builder.finishInline() {
@@ -394,9 +345,6 @@ enum MarkdownFlattener {
         if let inline = builder.finishInline() {
             contents.append(.text(inline))
         }
-        #if PROFILING
-        MarkdownFlattener.benchBuilder += pb0.duration(to: ContinuousClock.now)
-        #endif
         return contents
     }
 
@@ -405,10 +353,6 @@ enum MarkdownFlattener {
     /// Containers that cannot host views (headings, table cells) fold
     /// images into `[alt]` text; LaTeX and code references stay inline.
     static func flattenInline(_ container: any Markup, baseURL: URL?) -> AttributedString {
-        #if PROFILING
-        let pb0 = ContinuousClock.now
-        defer { MarkdownFlattener.benchBuilder += pb0.duration(to: ContinuousClock.now) }
-        #endif
         var builder = InlineStringBuilder(baseURL: baseURL)
         for piece in collectPieces(container) {
             switch piece {
