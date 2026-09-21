@@ -24,7 +24,9 @@ struct SelectableModifier: ViewModifier {
 
     @State private var model = SelectionModel()
     @State private var selectionCache = GlobalSelectionCache()
-    @State private var textLayouts: SwiftUI.Text.LayoutKey.Value = []
+    /// Latest drag location in container space — the auto-scroll timer
+    /// re-feeds it on platforms without a cursor position.
+    @State private var dragPoint: CGPoint = .zero
     #if canImport(AppKit)
     @State private var hoverLocation: CGPoint?
     @State private var cursorPushed = false
@@ -65,6 +67,7 @@ struct SelectableModifier: ViewModifier {
                         if !model.isDraggingSelection {
                             model.beginSelectionDrag(at: value.startLocation)
                         }
+                        dragPoint = value.location
                         model.updateSelectionDrag(to: value.location)
                     }
                     .onEnded { _ in
@@ -93,6 +96,14 @@ struct SelectableModifier: ViewModifier {
                     onCopy: copySelection,
                     onSelectAll: { model.selectAll() }
                 )
+            )
+            .background(
+                SelectionAutoScrollBridge(
+                    isDragging: model.isDragging,
+                    dragPoint: dragPoint,
+                    onDrag: { model.updateSelectionDrag(to: $0) }
+                )
+                .allowsHitTesting(false)
             )
 #endif
     }
