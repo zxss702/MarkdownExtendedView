@@ -2,9 +2,10 @@ import XCTest
 import Markdown
 @testable import MarkdownExtendedView
 
-/// Init-cost benchmark: parses + flattens a representative mixed
-/// document (big CJK paragraph, inline + block LaTeX, mermaid, code
-/// references, code block, tables) and reports per-phase timings.
+/// Init-cost benchmark: parses + flattens the same representative
+/// document as the test app (big CJK paragraph, inline + block LaTeX,
+/// mermaid, code references, code blocks, tables) and reports cold /
+/// warm totals plus a parse-only baseline.
 final class FlattenBenchmarkTests: XCTestCase {
 
     private static let content = #"""
@@ -180,124 +181,16 @@ Five                 |||
 
         var previous: [MDBlock] = []
         for i in 0..<5 {
-            #if PROFILING
-            MarkdownFlattener.benchReset()
-            #endif
             let start = ContinuousClock.now
             let blocks = MarkdownFlattener.flatten(Self.content, baseURL: nil, previousBlocks: previous)
             let total = start.duration(to: ContinuousClock.now)
             previous = blocks
             print("[BENCH] iteration \(i) blocks=\(blocks.count) total=\(total)")
-            #if PROFILING
-            MarkdownFlattener.benchReport()
-            #endif
         }
 
         // Split the remaining cost: cmark parse alone vs everything else.
         let parseStart = ContinuousClock.now
         _ = Markdown.Document(parsing: Self.content, options: [.disableSmartOpts, .disableSourcePosOpts])
         print("[BENCH] parse-only=\(parseStart.duration(to: ContinuousClock.now))")
-
-        // Same document minus the giant paragraph — isolates per-glyph
-        // mapping cost from structural work.
-        let shortContent = """
-        ## 标题
-
-        短文本 `file:///tmp/a.swift:46-58` 和 $x^2$ 混排。
-
-        ```c++
-        int main() { return 0; }
-        ```
-        """
-        for i in 0..<3 {
-            let start = ContinuousClock.now
-            _ = MarkdownFlattener.flatten(shortContent, baseURL: nil, previousBlocks: [])
-            print("[BENCH] short \(i) total=\(start.duration(to: ContinuousClock.now))")
-        }
-
-        // The giant paragraph alone.
-        let giantParagraph = Self.content
-            .components(separatedBy: "\n\n")
-            .first { $0.contains("予观夫") } ?? ""
-        for i in 0..<3 {
-            let start = ContinuousClock.now
-            _ = MarkdownFlattener.flatten(giantParagraph, baseURL: nil, previousBlocks: [])
-            print("[BENCH] giantPara \(i) total=\(start.duration(to: ContinuousClock.now))")
-        }
-        // A pure-text paragraph of similar length.
-        let pureText = String(repeating: "予观夫巴陵胜状在洞庭一湖衔远山吞长江浩浩汤汤横无际涯。", count: 60)
-        for i in 0..<3 {
-            let start = ContinuousClock.now
-            _ = MarkdownFlattener.flatten(pureText, baseURL: nil, previousBlocks: [])
-            print("[BENCH] pureText(\(pureText.count)ch) \(i) total=\(start.duration(to: ContinuousClock.now))")
-        }
-
-        // Isolate `finishInline`'s AttributeContainer + mergeAttributes
-        // cost — the per-block fixed overhead.
-        let m: [GlobalSelectionCache.CharacterMapping] = [.init(char: "a")]
-        var mergeCost: Duration = .zero
-        var attrCost: Duration = .zero
-        for _ in 0..<28 {
-            var s = AttributedString("测试文字")
-            let a0 = ContinuousClock.now
-            var container = AttributeContainer()
-            container[MarkdownBakedMappingsKey.self] = m
-            container[MarkdownBakedSignatureKey.self] = "m:a"
-            attrCost += a0.duration(to: ContinuousClock.now)
-            let m0 = ContinuousClock.now
-            s.mergeAttributes(container)
-            mergeCost += m0.duration(to: ContinuousClock.now)
-        }
-        print("[BENCH] 28x container=\(attrCost) merge=\(mergeCost)")
-
-        // Per-piece AttributedString cost: init + append, small vs big.
-        let big = giantParagraph
-        var t0 = ContinuousClock.now
-        var acc = AttributedString()
-        for _ in 0..<10 {
-            acc.append(AttributedString(big))
-        }
-        print("[BENCH] 10x bigAttrInit+append=\(t0.duration(to: ContinuousClock.now))")
-
-        t0 = ContinuousClock.now
-        var inits: [AttributedString] = []
-        for _ in 0..<10 {
-            inits.append(AttributedString(big))
-        }
-        print("[BENCH] 10x bigAttrInitOnly=\(t0.duration(to: ContinuousClock.now)) n=\(inits.count)")
-
-        // Single-init alternative: join plain strings, one init.
-        t0 = ContinuousClock.now
-        var joined = ""
-        for _ in 0..<10 { joined += big }
-        var single = AttributedString(joined)
-        print("[BENCH] join+singleInit=\(t0.duration(to: ContinuousClock.now)) len=\(single.characters.count)")
-        single.append(acc)
-
-        // Small-piece fixed cost.
-        t0 = ContinuousClock.now
-        var acc2 = AttributedString()
-        for _ in 0..<100 {
-            acc2.append(AttributedString("小段落文本 abc"))
-        }
-        print("[BENCH] 100x smallAttrInit+append=\(t0.duration(to: ContinuousClock.now))")
-
-        // NSAttributedString round trip.
-        t0 = ContinuousClock.now
-        let ns = NSMutableAttributedString()
-        for _ in 0..<10 {
-            ns.append(NSAttributedString(string: big))
-        }
-        let nsAppendDone = t0.duration(to: ContinuousClock.now)
-        t0 = ContinuousClock.now
-        var converted = AttributedString(ns)
-        print("[BENCH] 10x bigNSAttr append=\(nsAppendDone) convert=\(t0.duration(to: ContinuousClock.now)) len=\(converted.characters.count)")
-        converted.append(single)
-
-        // String += cost (signatureText path).
-        t0 = ContinuousClock.now
-        var sig = ""
-        for _ in 0..<10 { sig += big }
-        print("[BENCH] 10x bigStringAppend=\(t0.duration(to: ContinuousClock.now)) sig=\(sig.count)")
     }
 }
