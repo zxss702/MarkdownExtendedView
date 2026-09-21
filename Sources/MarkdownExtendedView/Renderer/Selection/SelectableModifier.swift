@@ -1,9 +1,10 @@
 // SelectableModifier.swift
 // MarkdownExtendedView
 //
-//  `.selectable()` container: collects every descendant `Text` layout via
-//  `Text.LayoutKey`, collects opt-in anchors via `MarkdownLayoutKey`, and
-//  builds the `SelectionDocument` synchronously whenever layout changes.
+//  `.selectable()` container: collects `MarkdownLayoutKey` anchor
+//  payloads — each `makeCanSelectable()` anchor bundles its own
+//  subtree's `Text` layouts — and builds the `SelectionDocument`
+//  synchronously whenever layout changes.
 //  Text selection only engages for views wrapped in
 //  `makeCanSelectable()` — everything else stays non-selectable.
 //
@@ -32,22 +33,17 @@ struct SelectableModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(selectionCache)
-            .onPreferenceChange(SwiftUI.Text.LayoutKey.self) { layouts in
-                textLayouts = layouts
-            }
             .backgroundPreferenceValue(MarkdownLayoutKey.self) { anchors in
                 GeometryReader { geometry in
                     Color.clear
                         .onChange(
                             of: SelectionLayoutInputID(
-                                layouts: textLayouts,
                                 anchors: anchors,
                                 size: geometry.size
                             ),
                             initial: true
                         ) { _, _ in
                             model.updateLayout(
-                                textLayouts: textLayouts,
                                 anchors: anchors,
                                 geometry: geometry
                             )
@@ -302,28 +298,46 @@ public extension View {
 public struct MakeTextSelectable: ViewModifier {
     @Environment(GlobalSelectionCache.self) private var selectionCache: GlobalSelectionCache?
     @Environment(\.markdownSelectionLinePrefix) private var linePrefix
+    @Environment(\.markdownSelectionID) private var environmentSelectionID
     @State private var blockId = UUID()
 
     public let isBlock: Bool
     public let blockText: String
     /// Rendered image for rich copies (mermaid diagram, block formula).
     public let richImage: MTImage?
+    /// Explicit stable identity — wins over the environment value.
+    public let selectionID: String?
 
     public func body(content: Content) -> some View {
         if selectionCache != nil {
             content
                 .selectionTextPassThrough()
-                .anchorPreference(key: MarkdownLayoutKey.self, value: .bounds) { bounds in
-                    [
-                        MarkdownLayout(
-                            blockId: blockId,
-                            bounds: bounds,
-                            isBlock: isBlock,
-                            blockText: blockText,
-                            linePrefix: linePrefix.isEmpty ? nil : linePrefix,
-                            richImage: richImage
-                        )
-                    ]
+                // Capture this subtree's own text layouts so the payload
+                // binds texts to their anchor structurally — geometric
+                // matching races when lazy stacks remeasure mid-scroll.
+                .backgroundPreferenceValue(SwiftUI.Text.LayoutKey.self) { layouts in
+                    Color.clear
+                        .backgroundPreferenceValue(MarkdownLayoutKey.self) { nested in
+                            // Texts claimed by nested anchors belong to
+                            // them — the innermost anchor wins.
+                            let nestedTexts = nested.flatMap { $0.textLayouts }
+                            Color.clear.anchorPreference(
+                                key: MarkdownLayoutKey.self, value: .bounds
+                            ) { bounds in
+                                [
+                                    MarkdownLayout(
+                                        blockId: blockId,
+                                        bounds: bounds,
+                                        isBlock: isBlock,
+                                        blockText: blockText,
+                                        linePrefix: linePrefix.isEmpty ? nil : linePrefix,
+                                        richImage: richImage,
+                                        selectionID: selectionID ?? environmentSelectionID,
+                                        textLayouts: layouts.filter { !nestedTexts.contains($0) }
+                                    )
+                                ]
+                            }
+                        }
                 }
         } else {
             content
@@ -332,16 +346,23 @@ public struct MakeTextSelectable: ViewModifier {
 }
 
 public extension View {
+    /// - Parameter selectionID: stable data-level identity for the
+    ///   anchor (e.g. a row/model id). Inside lazy containers this is
+    ///   what lets the selection document dedupe rematerialized copies
+    ///   of the same logical row instead of accumulating duplicates.
+    ///   Defaults to the `markdownSelectionID` environment value.
     func makeCanSelectable(
         isBlock: Bool = false,
         blockText: String = "",
-        richImage: MTImage? = nil
+        richImage: MTImage? = nil,
+        selectionID: String? = nil
     ) -> some View {
         self.modifier(
             MakeTextSelectable(
                 isBlock: isBlock,
                 blockText: blockText,
-                richImage: richImage
+                richImage: richImage,
+                selectionID: selectionID
             )
         )
     }

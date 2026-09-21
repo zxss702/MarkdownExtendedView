@@ -20,6 +20,10 @@ struct SelectionSection: @unchecked Sendable {
     /// Prefix emitted at the start of each copied line inside this
     /// section (e.g. `"> "` for blockquotes). nil for normal text.
     var linePrefix: String? = nil
+    /// Identity of the source layout snapshot — lets a selection
+    /// position survive document rebuilds by translating its offset
+    /// into the rebuilt range for the same snapshot.
+    var key: SelectionSnapshotIdentity? = nil
 }
 
 struct SelectionLine: @unchecked Sendable {
@@ -78,14 +82,55 @@ struct SelectionDocument: @unchecked Sendable {
     }
 
     var startPosition: SelectionPosition {
-        SelectionPosition(
+        anchored(SelectionPosition(
             offset: 0,
             affinity: textLength == 0 ? .upstream : .downstream
-        )
+        ))
     }
 
     var endPosition: SelectionPosition {
-        SelectionPosition(offset: textLength, affinity: .upstream)
+        anchored(SelectionPosition(offset: textLength, affinity: .upstream))
+    }
+
+    // MARK: Rebuild-stable positions
+
+    /// Stamps `position` with the snapshot key of the section containing
+    /// its offset — the payload `translated` uses to remap the position
+    /// after a document rebuild shifts section ranges.
+    private func anchored(_ position: SelectionPosition) -> SelectionPosition {
+        var position = position
+        let section = sections.first { $0.range.contains(position.offset) }
+            ?? (position.offset >= textLength ? sections.last : sections.first)
+        if let section, let key = section.key {
+            position.sectionKey = key
+            position.localOffset = position.offset - section.range.lowerBound
+        }
+        return position
+    }
+
+    /// The same position in THIS rebuilt document — looks up the source
+    /// snapshot's new range. Falls back to the clamped raw offset for
+    /// unkeyed positions; nil when the snapshot is gone.
+    func translated(_ position: SelectionPosition) -> SelectionPosition? {
+        guard let key = position.sectionKey else {
+            return SelectionPosition(
+                offset: min(position.offset, textLength),
+                affinity: position.affinity
+            )
+        }
+        guard let section = sections.first(where: { $0.key == key }) else {
+            return nil
+        }
+        let offset = min(
+            section.range.lowerBound + position.localOffset,
+            section.range.upperBound
+        )
+        return SelectionPosition(
+            offset: offset,
+            affinity: position.affinity,
+            sectionKey: key,
+            localOffset: position.localOffset
+        )
     }
 
     func plainText(in range: SelectionRange) -> String {
@@ -315,10 +360,10 @@ struct SelectionDocument: @unchecked Sendable {
         let trailingDistance = abs(point.x - slice.rect.trailingEdgeX(for: slice.layoutDirection))
 
         if leadingDistance <= trailingDistance {
-            return SelectionPosition(offset: slice.range.lowerBound, affinity: .downstream)
+            return anchored(SelectionPosition(offset: slice.range.lowerBound, affinity: .downstream))
         }
 
-        return SelectionPosition(offset: slice.range.upperBound, affinity: .upstream)
+        return anchored(SelectionPosition(offset: slice.range.upperBound, affinity: .upstream))
     }
 
     func characterRange(at point: CGPoint) -> SelectionRange? {
@@ -327,8 +372,8 @@ struct SelectionDocument: @unchecked Sendable {
         }
 
         return SelectionRange(
-            start: SelectionPosition(offset: slice.range.lowerBound, affinity: .downstream),
-            end: SelectionPosition(offset: slice.range.upperBound, affinity: .upstream)
+            start: anchored(SelectionPosition(offset: slice.range.lowerBound, affinity: .downstream)),
+            end: anchored(SelectionPosition(offset: slice.range.upperBound, affinity: .upstream))
         )
     }
 
@@ -441,31 +486,31 @@ struct SelectionDocument: @unchecked Sendable {
         let clampedOffset = min(max(offset, 0), textLength)
 
         if clampedOffset == 0 {
-            return SelectionPosition(offset: 0, affinity: .downstream)
+            return anchored(SelectionPosition(offset: 0, affinity: .downstream))
         }
 
         if clampedOffset == textLength {
-            return SelectionPosition(offset: clampedOffset, affinity: .upstream)
+            return anchored(SelectionPosition(offset: clampedOffset, affinity: .upstream))
         }
 
         if let slice = slices.last(where: { $0.range.upperBound == clampedOffset }) {
-            return SelectionPosition(offset: slice.range.upperBound, affinity: .upstream)
+            return anchored(SelectionPosition(offset: slice.range.upperBound, affinity: .upstream))
         }
 
         if let slice = slices.first(where: { $0.range.lowerBound == clampedOffset }) {
-            return SelectionPosition(offset: slice.range.lowerBound, affinity: .downstream)
+            return anchored(SelectionPosition(offset: slice.range.lowerBound, affinity: .downstream))
         }
 
         if let slice = slices.first(where: { $0.range.contains(clampedOffset) }) {
-            return SelectionPosition(offset: slice.range.upperBound, affinity: .upstream)
+            return anchored(SelectionPosition(offset: slice.range.upperBound, affinity: .upstream))
         }
 
         if let nextSlice = slices.first(where: { $0.range.lowerBound > clampedOffset }) {
-            return SelectionPosition(offset: nextSlice.range.lowerBound, affinity: .downstream)
+            return anchored(SelectionPosition(offset: nextSlice.range.lowerBound, affinity: .downstream))
         }
 
         if let previousSlice = slices.last(where: { $0.range.upperBound < clampedOffset }) {
-            return SelectionPosition(offset: previousSlice.range.upperBound, affinity: .upstream)
+            return anchored(SelectionPosition(offset: previousSlice.range.upperBound, affinity: .upstream))
         }
 
         return endPosition

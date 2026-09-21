@@ -1,8 +1,9 @@
 // SelectionDocumentBuilder.swift
 //  MarkdownExtendedView
 //
-//  Builds a SelectionDocument from collected `Text.LayoutKey` layouts and
-//  `MarkdownLayoutKey` anchors. Markdown texts may carry a
+//  Builds a SelectionDocument from `MarkdownLayoutKey` anchor payloads —
+//  each anchor arrives with the `Text.LayoutKey` layouts of its own
+//  subtree already attached. Markdown texts may carry a
 //  `MarkdownBlockMappingsAttribute` for direct run-encoded extraction;
 //  every other text (including all external `Text` views) is mapped via
 //  guarded Core Text reflection, so nothing here can crash on layout
@@ -20,11 +21,16 @@ struct ResolvedSelectionAnchor {
     let linePrefix: String?
     /// Rendered image for rich copies (mermaid diagram, block formula).
     var richImage: MTImage? = nil
+    /// Caller-supplied data-level identity — survives lazy
+    /// dematerialization, unlike view-state ids.
+    var selectionID: String? = nil
+    /// Text layouts captured inside this anchor's own subtree —
+    /// structural binding, no geometric matching.
+    var textLayouts: SwiftUI.Text.LayoutKey.Value = []
 }
 
 /// The change-detection key for `.task(id:)` in `SelectableModifier`.
 struct SelectionLayoutInputID: Equatable {
-    let layouts: SwiftUI.Text.LayoutKey.Value
     let anchors: [MarkdownLayout]
     let size: CGSize
 }
@@ -34,61 +40,60 @@ enum SelectionDocumentBuilder {
     // MARK: - Snapshot collection
 
     /// Produces snapshots for atomic anchors (formulas, images, cards,
-    /// bullets) plus every `Text` whose center sits inside a non-atomic
-    /// anchor. Texts inside atomic anchors, or outside all anchors, are
-    /// excluded — selection is opt-in via `makeCanSelectable()`.
+    /// bullets) plus every `Text` bundled inside a non-atomic anchor's
+    /// own payload. Texts outside anchors never arrive here — selection
+    /// is opt-in via `makeCanSelectable()`, and each anchor captures its
+    /// subtree's layouts structurally rather than by frame containment.
     static func makeSnapshots(
-        textLayouts: SwiftUI.Text.LayoutKey.Value,
         anchors: [ResolvedSelectionAnchor],
         geometry: GeometryProxy
     ) -> [SelectionLayoutSnapshot] {
         var snapshots: [SelectionLayoutSnapshot] = []
-        snapshots.reserveCapacity(anchors.count + textLayouts.count)
+        snapshots.reserveCapacity(anchors.count * 2)
 
-        for anchor in anchors where anchor.isBlock {
-            if let snapshot = SelectionLayoutSnapshot(anchor: anchor) {
-                snapshots.append(snapshot)
+        for anchor in anchors {
+            if anchor.isBlock {
+                if var snapshot = SelectionLayoutSnapshot(anchor: anchor) {
+                    snapshot.anchorID = anchor.selectionID
+                    snapshots.append(snapshot)
+                }
+                continue
+            }
+
+            for proxy in anchor.textLayouts {
+                let origin = geometry[proxy.origin]
+                if var snapshot = SelectionLayoutSnapshot(
+                    base: proxy.layout,
+                    origin: origin,
+                    linePrefix: anchor.linePrefix
+                ) {
+                    snapshot.anchorID = anchor.selectionID
+                    snapshots.append(snapshot)
+                }
             }
         }
 
-        for proxy in textLayouts {
-            let origin = geometry[proxy.origin]
-            guard let frame = textFrame(of: proxy.layout, origin: origin) else {
-                continue
-            }
-
-            let center = CGPoint(x: frame.midX, y: frame.midY)
-            if anchors.contains(where: { $0.isBlock && $0.rect.contains(center) }) {
-                continue
-            }
-            guard let anchor = anchors.first(where: {
-                !$0.isBlock && $0.rect.contains(center)
-            }) else {
-                continue
-            }
-
-            if let snapshot = SelectionLayoutSnapshot(
-                base: proxy.layout,
-                origin: origin,
-                linePrefix: anchor.linePrefix
-            ) {
-                snapshots.append(snapshot)
-            }
+        // Assign position-independent identities in display order. An
+        // anchor's injected `selectionID` fully disambiguates the row,
+        // so the ordinal only separates same-text snapshots sharing an
+        // anchor (or un-IDed content, where it falls back to text order).
+        // Frames deliberately play no part — they drift while a lazy
+        // stack remeasures during scroll.
+        snapshots.sort(by: areInDisplayOrder)
+        var ordinals: [SnapshotOrdinalKey: Int] = [:]
+        for index in snapshots.indices {
+            let key = SnapshotOrdinalKey(
+                anchor: snapshots[index].anchorID ?? "",
+                text: snapshots[index].attributedString.string
+            )
+            let ordinal = ordinals[key, default: 0]
+            ordinals[key] = ordinal + 1
+            snapshots[index].identity = SelectionSnapshotIdentity(
+                anchor: key.anchor, text: key.text, ordinal: ordinal
+            )
         }
 
         return snapshots
-    }
-
-    private static func textFrame(of layout: SwiftUI.Text.Layout, origin: CGPoint) -> CGRect? {
-        var frame = CGRect.null
-        for line in layout {
-            let rect = line.typographicBounds.rect
-            guard rect.isFiniteForSelection else { continue }
-            frame = frame.union(rect)
-        }
-        guard !frame.isNull else { return nil }
-        let offsetFrame = frame.offsetBy(dx: origin.x, dy: origin.y)
-        return offsetFrame.isFiniteForSelection ? offsetFrame : nil
     }
 
     // MARK: - Document assembly
@@ -110,7 +115,8 @@ enum SelectionDocumentBuilder {
                 sections.append(.init(
                     range: sectionRange,
                     frame: layout.frame,
-                    linePrefix: layout.linePrefix
+                    linePrefix: layout.linePrefix,
+                    key: layout.identity
                 ))
             }
 
@@ -174,6 +180,10 @@ enum SelectionDocumentBuilder {
 
 struct SelectionLayoutSnapshot: @unchecked Sendable {
     let key: SelectionLayoutSnapshotKey
+    /// Containing anchor's injected `selectionID`, if any.
+    var anchorID: String?
+    /// Assigned in `makeSnapshots` once display order is known.
+    var identity: SelectionSnapshotIdentity?
     let attributedString: NSAttributedString
     let frame: CGRect
     let lines: [SelectionLineSnapshot]
@@ -512,6 +522,25 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
 
 // MARK: - Supporting types
 
+/// Position-independent identity of a snapshot. `anchor` carries the
+/// caller-injected `selectionID` ("" when none); `ordinal` separates
+/// same-text snapshots sharing an anchor. Survives lazy
+/// materialization and frame drift — the cache key for merging and
+/// the payload that lets selection positions remap across rebuilds.
+struct SelectionSnapshotIdentity: Hashable {
+    let anchor: String
+    let text: String
+    let ordinal: Int
+}
+
+/// Hash key used when numbering duplicate (anchor, text) snapshots.
+private struct SnapshotOrdinalKey: Hashable {
+    let anchor: String
+    let text: String
+}
+
+/// Content fingerprint — frame included, so a moved or relaid-out
+/// snapshot registers as changed and the document rebuilds.
 struct SelectionLayoutSnapshotKey: Hashable, @unchecked Sendable {
     let text: String
     let minX: Int

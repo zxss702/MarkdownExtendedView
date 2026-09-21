@@ -18,6 +18,11 @@ enum SelectionAffinity {
 struct SelectionPosition: Equatable {
     var offset: Int
     var affinity: SelectionAffinity
+    /// Section snapshot identity + offset inside that section, filled
+    /// by the document — rebuild-stable so a selection survives lazy
+    /// row materialization mid-drag.
+    var sectionKey: SelectionSnapshotIdentity? = nil
+    var localOffset: Int = 0
 }
 
 struct SelectionRange: Equatable {
@@ -53,7 +58,12 @@ final class SelectionModel {
     private(set) var selectionAnchor: SelectionPosition?
     private(set) var isDragging = false
     private var document = SelectionDocument.empty
-    private var cachedLayoutSnapshots: [SelectionLayoutSnapshotKey: SelectionLayoutSnapshot] = [:]
+    /// Merged snapshots keyed by position-independent identity — during
+    /// a drag, rematerialized rows overwrite their stale entry instead
+    /// of accumulating duplicates.
+    private var cachedLayoutSnapshots: [SelectionSnapshotIdentity: SelectionLayoutSnapshot] = [:]
+    /// Content fingerprints (text + frame) of the document's sources —
+    /// any change triggers a rebuild.
     private var documentSourceKeys: Set<SelectionLayoutSnapshotKey> = []
 
     var selectionIsActive: Bool {
@@ -75,7 +85,6 @@ final class SelectionModel {
     // MARK: - Layout intake (synchronous)
 
     func updateLayout(
-        textLayouts: SwiftUI.Text.LayoutKey.Value,
         anchors: [MarkdownLayout],
         geometry: GeometryProxy
     ) {
@@ -85,37 +94,67 @@ final class SelectionModel {
                 isBlock: $0.isBlock,
                 blockText: $0.blockText,
                 linePrefix: $0.linePrefix,
-                richImage: $0.richImage
+                richImage: $0.richImage,
+                selectionID: $0.selectionID,
+                textLayouts: $0.textLayouts
             )
         }
 
         let snapshots = SelectionDocumentBuilder.makeSnapshots(
-            textLayouts: textLayouts,
             anchors: resolved,
             geometry: geometry
         )
 
-        for snapshot in snapshots {
-            cachedLayoutSnapshots[snapshot.key] = snapshot
+        // Identity is position-independent — a row keeps it across
+        // materialization and frame drift, so the cache overwrites in
+        // place instead of accumulating per-frame duplicates.
+        func cacheKey(_ snapshot: SelectionLayoutSnapshot) -> SelectionSnapshotIdentity {
+            snapshot.identity ?? SelectionSnapshotIdentity(
+                anchor: "", text: snapshot.key.text, ordinal: snapshot.key.minY
+            )
         }
 
-        if isDragging {
-            // Merge with previously seen snapshots so scroll-caused
-            // materialization changes don't lose the in-flight selection.
-            let mergedKeys = Set(cachedLayoutSnapshots.keys)
-            if mergedKeys != documentSourceKeys {
-                document = SelectionDocumentBuilder.build(from: Array(cachedLayoutSnapshots.values))
-                documentSourceKeys = mergedKeys
-            }
+        // Merge every update into a rolling document model so selection
+        // survives rows scrolling out of the lazy window — not just
+        // during drags. Each update replaces the snapshots of the
+        // anchors it claims atomically (a row's texts may change), while
+        // anchors absent from this update keep their cached sections.
+        let freshIdentities = Set(snapshots.map(cacheKey))
+        let freshAnchors = Set(freshIdentities.map(\.anchor))
+        let cachedAnchors = Set(cachedLayoutSnapshots.keys.map(\.anchor))
+        if !freshAnchors.isEmpty, freshAnchors.isDisjoint(with: cachedAnchors) {
+            // No overlap at all means the content was wholesale-replaced
+            // (new document), not scrolled — drop everything stale.
+            cachedLayoutSnapshots.removeAll()
         } else {
-            // Rebuild only when the snapshot set actually changed —
-            // identical key sets mean the visible layout is unchanged.
-            let keys = Set(snapshots.map(\.key))
-            if keys != documentSourceKeys {
-                document = SelectionDocumentBuilder.build(from: snapshots)
-                documentSourceKeys = keys
-                selectedRange = nil
+            cachedLayoutSnapshots = cachedLayoutSnapshots.filter { id, _ in
+                !freshAnchors.contains(id.anchor) || freshIdentities.contains(id)
             }
+        }
+        for snapshot in snapshots {
+            cachedLayoutSnapshots[cacheKey(snapshot)] = snapshot
+        }
+
+        let mergedKeys = Set(cachedLayoutSnapshots.values.map(\.key))
+        guard mergedKeys != documentSourceKeys else { return }
+        documentSourceKeys = mergedKeys
+        document = SelectionDocumentBuilder.build(from: Array(cachedLayoutSnapshots.values))
+        remapSelection()
+    }
+
+    /// Section ranges shift when the document rebuilds — remap positions
+    /// through their rebuild-stable snapshot identities. Positions whose
+    /// source snapshot is gone are dropped.
+    private func remapSelection() {
+        selectionAnchor = selectionAnchor.flatMap { document.translated($0) }
+        if
+            let range = selectedRange,
+            let start = document.translated(range.start),
+            let end = document.translated(range.end)
+        {
+            selectedRange = SelectionRange(start: start, end: end)
+        } else {
+            selectedRange = nil
         }
     }
 

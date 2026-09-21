@@ -15,6 +15,17 @@ public struct MarkdownLayout: @unchecked Sendable {
     /// typeset block formula. Compared by identity so re-rendered
     /// anchors don't churn the selection document.
     public let richImage: MTImage?
+    /// Caller-supplied stable identity (e.g. a data-model id). Unlike
+    /// `blockId` — view state that dies when a lazy stack dematerializes
+    /// its children — this survives rematerialization, which is what
+    /// lets the selection document dedupe and remap correctly.
+    public let selectionID: String?
+    /// The `Text` layouts of THIS anchor's own subtree, captured by
+    /// `MakeTextSelectable` via `backgroundPreferenceValue`. Texts
+    /// travel with their anchor instead of being matched geometrically,
+    /// so a lazy stack remeasuring mid-scroll can never mis-assign a
+    /// text to a neighbouring row.
+    public let textLayouts: SwiftUI.Text.LayoutKey.Value
 
     public init(
         blockId: UUID,
@@ -22,7 +33,9 @@ public struct MarkdownLayout: @unchecked Sendable {
         isBlock: Bool = false,
         blockText: String = "",
         linePrefix: String? = nil,
-        richImage: MTImage? = nil
+        richImage: MTImage? = nil,
+        selectionID: String? = nil,
+        textLayouts: SwiftUI.Text.LayoutKey.Value = []
     ) {
         self.blockId = blockId
         self.bounds = bounds
@@ -30,6 +43,8 @@ public struct MarkdownLayout: @unchecked Sendable {
         self.blockText = blockText
         self.linePrefix = linePrefix
         self.richImage = richImage
+        self.selectionID = selectionID
+        self.textLayouts = textLayouts
     }
 }
 
@@ -41,6 +56,8 @@ extension MarkdownLayout: Equatable {
             && lhs.blockText == rhs.blockText
             && lhs.linePrefix == rhs.linePrefix
             && lhs.richImage.map(ObjectIdentifier.init) == rhs.richImage.map(ObjectIdentifier.init)
+            && lhs.selectionID == rhs.selectionID
+            && lhs.textLayouts == rhs.textLayouts
     }
 }
 
@@ -59,9 +76,20 @@ private struct MarkdownSelectionLinePrefixKey: EnvironmentKey {
     static let defaultValue = ""
 }
 
+/// Data-level stable identity for selection anchors — injected by the
+/// renderer per `MDBlock`, or passed explicitly to `makeCanSelectable`.
+private struct MarkdownSelectionIDKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
 extension EnvironmentValues {
     var markdownSelectionLinePrefix: String {
         get { self[MarkdownSelectionLinePrefixKey.self] }
         set { self[MarkdownSelectionLinePrefixKey.self] = newValue }
+    }
+
+    var markdownSelectionID: String? {
+        get { self[MarkdownSelectionIDKey.self] }
+        set { self[MarkdownSelectionIDKey.self] = newValue }
     }
 }

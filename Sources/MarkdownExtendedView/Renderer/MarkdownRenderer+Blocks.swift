@@ -18,6 +18,13 @@ struct RenderBlock: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        // Data-level anchor identity: `block.id` survives lazy
+        // materialization, keeping selection snapshots stable.
+        blockContent
+            .environment(\.markdownSelectionID, block.id.uuidString)
+    }
+
+    @ViewBuilder private var blockContent: some View {
         switch block.content {
         case .heading(let level, let attributed):
             RenderHeading(level: level, attributed: attributed)
