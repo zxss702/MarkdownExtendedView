@@ -92,14 +92,22 @@ struct MermaidView: View {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
-                .makeCanSelectable(isBlock: true, blockText: code, richImage: image)
+                .makeCanSelectable(
+                    isBlock: true,
+                    blockText: "```mermaid\n\(code)\n```",
+                    richImage: image
+                )
                 .frame(maxWidth: image.size.width) // Use logical size
                 .contextMenu { mermaidMenu(image: image) }
             #elseif canImport(UIKit)
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
-                .makeCanSelectable(isBlock: true, blockText: code, richImage: image)
+                .makeCanSelectable(
+                    isBlock: true,
+                    blockText: "```mermaid\n\(code)\n```",
+                    richImage: image
+                )
                 .frame(maxWidth: image.size.width)
                 .contextMenu { mermaidMenu(image: image) }
             #endif

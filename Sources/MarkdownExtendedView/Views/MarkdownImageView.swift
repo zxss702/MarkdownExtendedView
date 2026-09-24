@@ -25,7 +25,7 @@ struct MarkdownImageView: View {
         content
             .makeCanSelectable(
                 isBlock: true,
-                blockText: "[\(image.altText)]",
+                blockText: "![\(image.altText)](\(image.source ?? ""))",
                 richImage: loadedPlatformImage
             )
             .contextMenu { imageMenu }

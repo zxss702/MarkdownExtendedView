@@ -71,7 +71,9 @@ struct RenderBlock: View {
             RenderTable(table: table)
 
         case .thematicBreak:
-            Divider().padding(.horizontal, 8)
+            Divider()
+                .padding(.horizontal, 8)
+                .makeCanSelectable(isBlock: true, blockText: "---")
 
         case .htmlBlock(let rawHTML):
             RenderHTMLBlock(rawHTML: rawHTML)
@@ -112,7 +114,10 @@ struct RenderRegularCodeBlock: View {
 
     var body: some View {
         HighlightedCodeView(code: code.code, language: code.language, theme: theme, lines: code.lines)
-            .makeCanSelectable()
+            .makeCanSelectable(
+                sourcePrefix: "```\(code.language ?? "")\n",
+                sourceSuffix: "\n```"
+            )
             .contentTransition(.numericText())
             .modifier(CodeBlockContainerModifier(theme: theme, isInteractive: false))
             .contextMenu {
@@ -188,7 +193,7 @@ struct RenderOrderedList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: theme.listItemSpacing) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                RenderListItem(item: item, bullet: "\(index + startIndex).", depth: depth)
+                RenderListItem(item: item, bullet: "\(index + startIndex).", bulletSource: "\(index + startIndex). ", depth: depth)
             }
         }
         .padding(.leading, depth > 0 ? theme.indentation : 0)
@@ -207,7 +212,7 @@ struct RenderUnorderedList: View {
                 if item.checkbox != nil {
                     RenderTaskListItem(item: item, depth: depth)
                 } else {
-                    RenderListItem(item: item, bullet: bulletForDepth(depth), depth: depth)
+                    RenderListItem(item: item, bullet: bulletForDepth(depth), bulletSource: "- ", depth: depth)
                 }
             }
         }
@@ -217,7 +222,10 @@ struct RenderUnorderedList: View {
 
 struct RenderListItem: View {
     let item: MDListItem
+    /// Rendered marker (`•`, `1.`).
     let bullet: String
+    /// Markdown-source marker copied instead (`- `, `3. `).
+    let bulletSource: String
     let depth: Int
 
     @Environment(\.markdownTheme) private var theme
@@ -228,7 +236,10 @@ struct RenderListItem: View {
                 .font(theme.bodySwiftUIFont)
                 .foregroundColor(theme.textColor)
                 .contentTransition(.numericText(countsDown: true))
-                .makeCanSelectable(isBlock: true, blockText: bullet + " ")
+                .makeCanSelectable(
+                    isBlock: true,
+                    blockText: String(repeating: "    ", count: depth) + bulletSource
+                )
 
             VStack(alignment: .leading, spacing: theme.listItemSpacing) {
                 ForEach(item.children) { child in
@@ -253,7 +264,8 @@ struct RenderTaskListItem: View {
                 .frame(width: 20, alignment: .trailing)
                 .makeCanSelectable(
                     isBlock: true,
-                    blockText: item.checkbox == .checked ? "[x] " : "[ ] "
+                    blockText: String(repeating: "    ", count: depth)
+                        + (item.checkbox == .checked ? "- [x] " : "- [ ] ")
                 )
 
             VStack(alignment: .leading, spacing: theme.listItemSpacing) {
