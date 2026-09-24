@@ -131,7 +131,6 @@ struct SelectableModifier: ViewModifier {
     @ViewBuilder
     private var selectionMenuItems: some View {
         Button("拷贝") { copySelection() }
-        Button("仅拷贝为文本") { copySelectionAsText() }
         Divider()
         Button("含图像拷贝") { copySelectionRich() }
     }
@@ -170,43 +169,28 @@ struct SelectableModifier: ViewModifier {
         return text
     }
 
-    /// 拷贝 — attributed rich text (RTF) plus a plain string.
+    /// 拷贝 / Cmd+C — the Markdown source of the selection.
     @discardableResult
     private func copySelection() -> Bool {
-        guard let attributed = model.selectedAttributedText(),
-              !attributed.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let text = selectedText() else {
             return false
         }
         #if canImport(AppKit)
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.writeObjects([attributed])
+        pasteboard.setString(text, forType: .string)
         return true
         #elseif canImport(UIKit)
-        UIPasteboard.general.string = attributed.string
+        UIPasteboard.general.string = text
         return true
         #else
         return false
         #endif
     }
 
-    /// 仅拷贝为文本 — plain string only.
-    private func copySelectionAsText() {
-        guard let text = selectedText() else {
-            return
-        }
-        #if canImport(AppKit)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        #elseif canImport(UIKit)
-        UIPasteboard.general.string = text
-        #endif
-    }
-
-    /// 含图像拷贝 — RTFD carrying rendered images (formulas, mermaid,
-    /// code-reference icons); the plain-text fallback keeps the normal
-    /// payloads (raw references, `$…$`, alt text).
+    /// 含图像拷贝 — RTFD carrying the rendered look: images for
+    /// formulas/mermaid/pictures; code references always copy their
+    /// raw source. The plain-text fallback is the Markdown source.
     private func copySelectionRich() {
         guard let rich = model.selectedRichText(), rich.length > 0 else {
             return
@@ -318,6 +302,11 @@ public struct MakeTextSelectable: ViewModifier {
     public let richImage: MTImage?
     /// Explicit stable identity — wins over the environment value.
     public let selectionID: String?
+    /// Markdown-source wrappers copied around this anchor's sections —
+    /// code-block fences (` ```swift ` … ` ``` `). Emitted only when
+    /// the selection covers the anchor's first/last section boundary.
+    public let sourcePrefix: String?
+    public let sourceSuffix: String?
 
     public func body(content: Content) -> some View {
         if selectionCache != nil {
@@ -344,7 +333,9 @@ public struct MakeTextSelectable: ViewModifier {
                                         linePrefix: linePrefix.isEmpty ? nil : linePrefix,
                                         richImage: richImage,
                                         selectionID: selectionID ?? environmentSelectionID,
-                                        textLayouts: layouts.filter { !nestedTexts.contains($0) }
+                                        textLayouts: layouts.filter { !nestedTexts.contains($0) },
+                                        sourcePrefix: sourcePrefix,
+                                        sourceSuffix: sourceSuffix
                                     )
                                 ]
                             }
@@ -366,14 +357,18 @@ public extension View {
         isBlock: Bool = false,
         blockText: String = "",
         richImage: MTImage? = nil,
-        selectionID: String? = nil
+        selectionID: String? = nil,
+        sourcePrefix: String? = nil,
+        sourceSuffix: String? = nil
     ) -> some View {
         self.modifier(
             MakeTextSelectable(
                 isBlock: isBlock,
                 blockText: blockText,
                 richImage: richImage,
-                selectionID: selectionID
+                selectionID: selectionID,
+                sourcePrefix: sourcePrefix,
+                sourceSuffix: sourceSuffix
             )
         )
     }

@@ -364,5 +364,31 @@ final class SelectionReflectionTests: XCTestCase {
         let breakSlice = snapshot.lines[0].slices[5]
         XCTAssertEqual(breakSlice.rect.width, 0)
     }
+
+    /// Plain copy emits Markdown source: boundary glyphs carry the
+    /// markers (`**`, backticks, link syntax, heading `#`) so the
+    /// concatenated `source` payload reconstructs the original text.
+    @MainActor
+    func test_flattenerEmitsSourcePayloads() throws {
+        func source(of content: String) throws -> String {
+            let blocks = MarkdownFlattener.flatten(content, baseURL: nil, previousBlocks: [])
+            var mappings: [GlobalSelectionCache.CharacterMapping]
+            switch blocks.first?.content {
+            case .text(let attributed), .heading(_, let attributed):
+                mappings = attributed.selectionMappings ?? []
+            default:
+                throw NSError(domain: "test", code: 1)
+            }
+            return mappings.map { $0.source ?? $0.char }.joined()
+        }
+
+        try XCTAssertEqual(source(of: "这是**加粗**的 `code`"), "这是**加粗**的 `code`")
+        try XCTAssertEqual(source(of: "# 标题"), "# 标题")
+        try XCTAssertEqual(source(of: "见 [link](https://example.com) 完"), "见 [link](https://example.com) 完")
+        // Soft line break: rendered `\n` and source `\n` must both appear.
+        try XCTAssertEqual(source(of: "第一行\n第二行"), "第一行\n第二行")
+        // Code reference: raw payload is the source.
+        try XCTAssertEqual(source(of: "`/tmp/a.swift:12`"), "`/tmp/a.swift:<12>`")
+    }
 }
 #endif

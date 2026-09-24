@@ -93,10 +93,10 @@ final class MarkdownExtendedViewOptimizationAgentTests: XCTestCase {
         XCTAssertEqual(grouped.first?.glyphCount, 1)
         XCTAssertEqual(grouped.last?.char, "")
         XCTAssertEqual(grouped.last?.glyphCount, "test.swift:1-5".count)
-        // Link + rich payloads ride along for hover/copy-link/rich copy.
+        // Link rides along for hover/copy-link. Raw source is the copy
+        // payload in every mode — code references never emit rendered
+        // rich content.
         XCTAssertTrue(grouped.allSatisfy { $0.link?.hasPrefix("file://") == true })
-        XCTAssertNotNil(grouped.first?.richImage)
-        XCTAssertEqual(grouped.first?.richText, "test.swift:1-5")
     }
 
     @MainActor

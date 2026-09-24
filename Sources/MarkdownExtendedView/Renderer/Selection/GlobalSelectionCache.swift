@@ -174,9 +174,6 @@ enum SelectionRichContent {
     /// A rendered image placed at this slice — inline formula image or
     /// an atomic block (mermaid diagram, block formula).
     case image(MTImage)
-    /// `[icon] File.swift:46-58` — icon attachment plus the tinted,
-    /// linked label, preserving the inline reference's look.
-    case codeRef(icon: MTImage, label: String, link: String?)
 }
 
 @Observable
@@ -208,12 +205,15 @@ public class GlobalSelectionCache {
         /// Resolved absolute link destination on this glyph — drives
         /// pointing-hand hover and the "拷贝链接" menu.
         public let link: String?
-        /// Image payload baked at a `\u{FFFC}` glyph (inline formula,
-        /// code-reference icon) — attached verbatim by rich copy.
+        /// Image payload baked at a `\u{FFFC}` glyph (inline formula) —
+        /// attached verbatim by rich copy.
         public let richImage: MDBakedInlineImage?
-        /// Display text paired with `richImage` at a group's first
-        /// member (the code-reference label `File.swift:46-58`).
-        public let richText: String?
+        /// Markdown-source copy text for this glyph, when it differs
+        /// from `char` — boundary glyphs of styled runs carry their
+        /// markers (`**b`, `d**`, `[t`, `t](url)`), so a partial
+        /// selection drops the markers of any glyph it excludes.
+        /// nil = copy `char` verbatim.
+        public let source: Substring?
         public init(
             char: Substring,
             glyphCount: Int = 1,
@@ -222,7 +222,7 @@ public class GlobalSelectionCache {
             isLineBreak: Bool = false,
             link: String? = nil,
             richImage: MDBakedInlineImage? = nil,
-            richText: String? = nil
+            source: Substring? = nil
         ) {
             self.char = char
             self.glyphCount = glyphCount
@@ -231,7 +231,7 @@ public class GlobalSelectionCache {
             self.isLineBreak = isLineBreak
             self.link = link
             self.richImage = richImage
-            self.richText = richText
+            self.source = source
         }
     }
 
@@ -291,12 +291,15 @@ public class GlobalSelectionCache {
                     runIndex += 1
                     producedInRun = 0
                 }
+                // `source` is a whole-run payload — it only makes sense
+                // on single-glyph entries (the boundary markers a
+                // `slicesText` run would need live on separate entries).
                 return CharacterMapping(
                     char: char,
                     group: run.group,
                     link: run.link,
                     richImage: run.richImage,
-                    richText: run.richText
+                    source: run.slicesText ? nil : run.source
                 )
             }
             return nil

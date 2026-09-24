@@ -85,7 +85,14 @@ enum MarkdownFlattener {
     ) -> MDBlockContent? {
         switch markup {
         case let heading as Heading:
-            return .heading(level: heading.level, flattenInline(heading, baseURL: baseURL))
+            return .heading(
+                level: heading.level,
+                flattenInline(
+                    heading,
+                    baseURL: baseURL,
+                    sourcePrefix: String(repeating: "#", count: heading.level) + " "
+                )
+            )
         case let codeBlock as CodeBlock:
             return flattenCodeBlock(codeBlock)
         case let blockQuote as BlockQuote:
@@ -353,7 +360,14 @@ enum MarkdownFlattener {
 
     /// Containers that cannot host views (headings, table cells) fold
     /// images into `[alt]` text; LaTeX and code references stay inline.
-    static func flattenInline(_ container: any Markup, baseURL: URL?) -> AttributedString {
+    /// `sourcePrefix`/`sourceSuffix` wrap the block's markdown-source
+    /// copy payload (e.g. `#` markers on a heading).
+    static func flattenInline(
+        _ container: any Markup,
+        baseURL: URL?,
+        sourcePrefix: String? = nil,
+        sourceSuffix: String? = nil
+    ) -> AttributedString {
         var builder = InlineStringBuilder(baseURL: baseURL)
         for piece in collectPieces(container) {
             switch piece {
@@ -364,11 +378,18 @@ enum MarkdownFlattener {
             case .latex(let source, _):
                 builder.appendInlineLatex(source)
             case .image(let image):
-                builder.appendText("[\(image.altText)]", style: [], link: nil)
+                builder.appendText(
+                    "[\(image.altText)]",
+                    style: [],
+                    link: nil,
+                    sourcePrefix: "!",
+                    sourceSuffix: "(\(image.source ?? ""))"
+                )
             case .codeReference(let reference, let raw):
                 builder.appendCodeReference(reference, raw: raw)
             }
         }
+        builder.applySourceWrapper(prefix: sourcePrefix, suffix: sourceSuffix)
         return builder.finishInline() ?? AttributedString()
     }
 
@@ -391,7 +412,13 @@ enum MarkdownFlattener {
         private static let inlineMathFontSize: CGFloat = 14
         private static let codeReferenceIconSize: CGFloat = 13
 
-        mutating func appendText(_ string: String, style: InlineTextStyle, link: String?) {
+        mutating func appendText(
+            _ string: String,
+            style: InlineTextStyle,
+            link: String?,
+            sourcePrefix: String = "",
+            sourceSuffix: String = ""
+        ) {
             guard !string.isEmpty else { return }
             var run = AttributedString(string)
             let intent = style.presentationIntent
@@ -404,14 +431,118 @@ enum MarkdownFlattener {
             }
             attributed.append(run)
             signatureText += string
-            // One run entry covers every glyph — the per-glyph slicing
-            // happens lazily in `MDGlyphCursor` at document-build time.
-            mappings.append(.init(
-                char: string[...],
-                glyphCount: string.count,
-                slicesText: true,
-                link: resolved?.absoluteString
-            ))
+            let linkString = resolved?.absoluteString
+
+            // Markdown-source copy payload: emphasis/link markers ride
+            // on the run's boundary glyphs (`source`), so a partial
+            // selection drops the markers of any glyph it excludes.
+            var sourcePrefix = sourcePrefix
+            var sourceSuffix = sourceSuffix
+            if style.contains(.code) { sourcePrefix += "`"; sourceSuffix = "`" + sourceSuffix }
+            if style.contains(.strikethrough) { sourcePrefix += "~~"; sourceSuffix = "~~" + sourceSuffix }
+            if style.contains(.italic) { sourcePrefix += "*"; sourceSuffix = "*" + sourceSuffix }
+            if style.contains(.bold) { sourcePrefix += "**"; sourceSuffix = "**" + sourceSuffix }
+            if let link {
+                sourcePrefix = "[" + sourcePrefix
+                sourceSuffix += "](\(link))"
+            }
+
+            guard !sourcePrefix.isEmpty || !sourceSuffix.isEmpty else {
+                // One run entry covers every glyph — the per-glyph
+                // slicing happens lazily in `MDGlyphCursor`.
+                mappings.append(.init(
+                    char: string[...],
+                    glyphCount: string.count,
+                    slicesText: true,
+                    link: linkString
+                ))
+                return
+            }
+
+            let characters = Array(string)
+            let last = characters.count - 1
+            for (index, character) in characters.enumerated() {
+                var source = String(character)
+                if index == 0 { source = sourcePrefix + source }
+                if index == last { source += sourceSuffix }
+                mappings.append(.init(
+                    char: String(character)[...],
+                    link: linkString,
+                    source: source == String(character) ? nil : source[...]
+                ))
+            }
+        }
+
+        /// Wraps the block's copy source — heading `#` markers, list
+        /// indentation, … — onto the first/last mapping entries. A
+        /// `slicesText` run cannot carry a `source`, so it is split:
+        /// the boundary glyph becomes its own entry.
+        mutating func applySourceWrapper(prefix: String?, suffix: String?) {
+            if let prefix, let index = mappings.firstIndex(where: { $0.glyphCount > 0 }) {
+                let mapping = mappings[index]
+                if mapping.slicesText {
+                    let first = mapping.char[mapping.char.startIndex]
+                    var split: [GlobalSelectionCache.CharacterMapping] = [
+                        .init(
+                            char: String(first)[...],
+                            link: mapping.link,
+                            source: (prefix + String(first))[...]
+                        )
+                    ]
+                    let rest = mapping.char.dropFirst()
+                    if !rest.isEmpty {
+                        split.append(.init(
+                            char: rest,
+                            glyphCount: mapping.glyphCount - 1,
+                            slicesText: true,
+                            link: mapping.link
+                        ))
+                    }
+                    mappings.replaceSubrange(index...index, with: split)
+                } else {
+                    mappings[index] = GlobalSelectionCache.CharacterMapping(
+                        char: mapping.char,
+                        glyphCount: mapping.glyphCount,
+                        group: mapping.group,
+                        isLineBreak: mapping.isLineBreak,
+                        link: mapping.link,
+                        richImage: mapping.richImage,
+                        source: (prefix + (mapping.source ?? mapping.char))[...]
+                    )
+                }
+            }
+            if let suffix, let index = mappings.lastIndex(where: { $0.glyphCount > 0 }) {
+                let mapping = mappings[index]
+                if mapping.slicesText {
+                    let last = mapping.char[mapping.char.index(before: mapping.char.endIndex)]
+                    var split: [GlobalSelectionCache.CharacterMapping] = []
+                    let rest = mapping.char.dropLast()
+                    if !rest.isEmpty {
+                        split.append(.init(
+                            char: rest,
+                            glyphCount: mapping.glyphCount - 1,
+                            slicesText: true,
+                            link: mapping.link
+                        ))
+                    }
+                    split.append(.init(
+                        char: String(last)[...],
+                        link: mapping.link,
+                        source: (String(last) + suffix)[...]
+                    ))
+                    mappings.replaceSubrange(index...index, with: split)
+                } else {
+                    mappings[index] = GlobalSelectionCache.CharacterMapping(
+                        char: mapping.char,
+                        glyphCount: mapping.glyphCount,
+                        group: mapping.group,
+                        isLineBreak: mapping.isLineBreak,
+                        link: mapping.link,
+                        richImage: mapping.richImage,
+                        source: ((mapping.source ?? mapping.char) + suffix)[...]
+                    )
+                }
+            }
         }
 
         mutating func appendNewline() {
@@ -465,9 +596,7 @@ enum MarkdownFlattener {
             mappings.append(.init(
                 char: raw[...],
                 group: group,
-                link: linkString,
-                richImage: baked,
-                richText: label
+                link: linkString
             ))
 
             var labelRun = AttributedString(label)

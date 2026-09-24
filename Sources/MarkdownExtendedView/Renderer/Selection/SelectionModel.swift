@@ -96,7 +96,9 @@ final class SelectionModel {
                 linePrefix: $0.linePrefix,
                 richImage: $0.richImage,
                 selectionID: $0.selectionID,
-                textLayouts: $0.textLayouts
+                textLayouts: $0.textLayouts,
+                sourcePrefix: $0.sourcePrefix,
+                sourceSuffix: $0.sourceSuffix
             )
         }
 
@@ -225,16 +227,8 @@ final class SelectionModel {
         return document.plainText(in: selectedRange)
     }
 
-    func selectedAttributedText() -> NSAttributedString? {
-        guard let selectedRange, !selectedRange.isCollapsed else {
-            return nil
-        }
-
-        return document.attributedText(in: selectedRange)
-    }
-
-    /// Rich "含图像" copy: selected formulas/mermaid/code references
-    /// emit images and tinted icon+label instead of plain payloads.
+    /// Rich "含图像" copy: selected formulas/mermaid/images emit their
+    /// rendered image; code references keep their raw source payload.
     func selectedRichText() -> NSAttributedString? {
         guard let selectedRange, !selectedRange.isCollapsed else {
             return nil

@@ -285,38 +285,108 @@ final class SelectionDocumentTests: XCTestCase {
         XCTAssertEqual(partialRich.string, "ab$$")
     }
 
-    func testRichTextCodeRefEmitsIconAndTintedLabel() {
-        let icon = NSImage(size: NSSize(width: 12, height: 12))
+    /// Code references always copy their raw source — even in a rich
+    /// copy the slice carries no `rich` content, so the raw payload
+    /// passes through verbatim.
+    func testRichTextCodeRefEmitsRawSource() {
         let document = SelectionDocument(
             attributedString: NSAttributedString(string: "see `/tmp/a.swift:<12>`"),
-            sections: [.init(range: 0..<22, frame: CGRect(x: 0, y: 0, width: 200, height: 12))],
+            sections: [.init(range: 0..<23, frame: CGRect(x: 0, y: 0, width: 200, height: 12))],
             lines: [.init(rect: CGRect(x: 0, y: 0, width: 200, height: 12), sliceRange: 0..<2)],
             slices: [
                 .init(range: 0..<4, rect: CGRect(x: 0, y: 0, width: 30, height: 12), lineIndex: 0, layoutDirection: .leftToRight),
                 .init(
-                    range: 4..<22,
+                    range: 4..<23,
                     rect: CGRect(x: 30, y: 0, width: 170, height: 12),
                     lineIndex: 0,
                     layoutDirection: .leftToRight,
-                    link: "file:///tmp/a.swift:12",
-                    rich: .codeRef(icon: icon, label: "a.swift:12", link: "file:///tmp/a.swift:12")
+                    link: "file:///tmp/a.swift:12"
                 )
             ]
         )
 
         let full = SelectionRange(
             start: SelectionPosition(offset: 0, affinity: .downstream),
-            end: SelectionPosition(offset: 22, affinity: .upstream)
+            end: SelectionPosition(offset: 23, affinity: .upstream)
         )
         let rich = document.richText(in: full)
 
-        // "see " + icon attachment + tinted label.
-        XCTAssertEqual(rich.string, "see \u{FFFC}a.swift:12")
-        XCTAssertNotNil(rich.attribute(.attachment, at: 4, effectiveRange: nil))
-        let color = rich.attribute(.foregroundColor, at: 5, effectiveRange: nil) as? NSColor
-        XCTAssertEqual(color, .systemBlue)
-        let link = rich.attribute(.link, at: 5, effectiveRange: nil) as? URL
-        XCTAssertEqual(link?.absoluteString, "file:///tmp/a.swift:12")
+        XCTAssertEqual(rich.string, "see `/tmp/a.swift:<12>`")
+        XCTAssertNil(rich.attribute(.attachment, at: 4, effectiveRange: nil))
     }
     #endif
+
+    // MARK: - Markdown source copy
+
+    /// Rendered text and source text can diverge (`**bold**` renders as
+    /// `bold`). Plain copy must emit the source payload — boundary glyphs
+    /// carry the Markdown markers, so partial selection naturally drops
+    /// markers outside the range.
+    func testPlainTextEmitsSourcePayloads() {
+        let rect = CGRect(x: 0, y: 0, width: 40, height: 12)
+        let document = SelectionDocument(
+            attributedString: NSAttributedString(string: "bold"),
+            sections: [.init(range: 0..<4, frame: rect)],
+            lines: [.init(rect: rect, sliceRange: 0..<4)],
+            slices: [
+                .init(range: 0..<1, rect: rect, lineIndex: 0, layoutDirection: .leftToRight, sourceRange: 0..<3),
+                .init(range: 1..<2, rect: rect, lineIndex: 0, layoutDirection: .leftToRight, sourceRange: 3..<4),
+                .init(range: 2..<3, rect: rect, lineIndex: 0, layoutDirection: .leftToRight, sourceRange: 4..<5),
+                .init(range: 3..<4, rect: rect, lineIndex: 0, layoutDirection: .leftToRight, sourceRange: 5..<8)
+            ],
+            sourceString: NSAttributedString(string: "**bold**")
+        )
+
+        func copy(_ range: Range<Int>) -> String? {
+            document.plainText(
+                in: SelectionRange(
+                    start: SelectionPosition(offset: range.lowerBound, affinity: .downstream),
+                    end: SelectionPosition(offset: range.upperBound, affinity: .upstream)
+                )
+            )
+        }
+
+        XCTAssertEqual(copy(0..<4), "**bold**")
+        XCTAssertEqual(copy(0..<3), "**bol")
+        XCTAssertEqual(copy(1..<3), "ol")
+        XCTAssertEqual(copy(3..<4), "d**")
+    }
+
+    /// Anchor-level fences (`sourcePrefix`/`sourceSuffix`) attach only when
+    /// the selection reaches the anchor's boundary — partial selections
+    /// inside a fenced block must not emit stray fences.
+    func testSourcePrefixSuffixAttachAtAnchorBoundaries() {
+        let rectA = CGRect(x: 0, y: 0, width: 60, height: 12)
+        let rectB = CGRect(x: 0, y: 12, width: 60, height: 12)
+        let document = SelectionDocument(
+            attributedString: NSAttributedString(string: "let alet b"),
+            sections: [
+                .init(range: 0..<5, frame: rectA, sourcePrefix: "```swift\n"),
+                .init(range: 5..<10, frame: rectB, sourceSuffix: "\n```")
+            ],
+            lines: [
+                .init(rect: rectA, sliceRange: 0..<1),
+                .init(rect: rectB, sliceRange: 1..<2)
+            ],
+            slices: [
+                .init(range: 0..<5, rect: rectA, lineIndex: 0, layoutDirection: .leftToRight, sourceRange: 0..<5),
+                .init(range: 5..<10, rect: rectB, lineIndex: 1, layoutDirection: .leftToRight, sourceRange: 5..<10)
+            ],
+            sourceString: NSAttributedString(string: "let alet b")
+        )
+
+        func copy(_ range: Range<Int>) -> String? {
+            document.plainText(
+                in: SelectionRange(
+                    start: SelectionPosition(offset: range.lowerBound, affinity: .downstream),
+                    end: SelectionPosition(offset: range.upperBound, affinity: .upstream)
+                )
+            )
+        }
+
+        XCTAssertEqual(copy(0..<10), "```swift\nlet a\nlet b\n```")
+        XCTAssertEqual(copy(0..<5), "```swift\nlet a")
+        XCTAssertEqual(copy(5..<10), "let b\n```")
+        XCTAssertEqual(copy(2..<8), "t a\nlet")
+    }
 }

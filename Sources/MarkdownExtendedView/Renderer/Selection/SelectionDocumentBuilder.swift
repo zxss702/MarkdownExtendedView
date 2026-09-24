@@ -27,6 +27,10 @@ struct ResolvedSelectionAnchor {
     /// Text layouts captured inside this anchor's own subtree —
     /// structural binding, no geometric matching.
     var textLayouts: SwiftUI.Text.LayoutKey.Value = []
+    /// Markdown-source wrappers around the anchor's copied sections
+    /// (code-block fences) — attached to the first/last snapshot.
+    var sourcePrefix: String? = nil
+    var sourceSuffix: String? = nil
 }
 
 /// The change-detection key for `.task(id:)` in `SelectableModifier`.
@@ -52,23 +56,34 @@ enum SelectionDocumentBuilder {
         snapshots.reserveCapacity(anchors.count * 2)
 
         for anchor in anchors {
+            let anchorStart = snapshots.count
             if anchor.isBlock {
                 if var snapshot = SelectionLayoutSnapshot(anchor: anchor) {
                     snapshot.anchorID = anchor.selectionID
                     snapshots.append(snapshot)
                 }
-                continue
+            } else {
+                for proxy in anchor.textLayouts {
+                    let origin = geometry[proxy.origin]
+                    if var snapshot = SelectionLayoutSnapshot(
+                        base: proxy.layout,
+                        origin: origin,
+                        linePrefix: anchor.linePrefix
+                    ) {
+                        snapshot.anchorID = anchor.selectionID
+                        snapshots.append(snapshot)
+                    }
+                }
             }
 
-            for proxy in anchor.textLayouts {
-                let origin = geometry[proxy.origin]
-                if var snapshot = SelectionLayoutSnapshot(
-                    base: proxy.layout,
-                    origin: origin,
-                    linePrefix: anchor.linePrefix
-                ) {
-                    snapshot.anchorID = anchor.selectionID
-                    snapshots.append(snapshot)
+            // The anchor's source wrapper (code fences) rides on its
+            // first/last section in display order — a selection that
+            // doesn't reach the boundary drops the fence.
+            if anchor.sourcePrefix != nil || anchor.sourceSuffix != nil {
+                snapshots[anchorStart...].sort(by: areInDisplayOrder)
+                if anchorStart < snapshots.count {
+                    snapshots[anchorStart].sourcePrefix = anchor.sourcePrefix
+                    snapshots[snapshots.count - 1].sourceSuffix = anchor.sourceSuffix
                 }
             }
         }
@@ -102,6 +117,7 @@ enum SelectionDocumentBuilder {
         let layouts = snapshots.sorted(by: areInDisplayOrder)
 
         let attributedString = NSMutableAttributedString()
+        let sourceString = NSMutableAttributedString()
         var sections: [SelectionSection] = []
         var lines: [SelectionLine] = []
         var slices: [SelectionSlice] = []
@@ -110,13 +126,17 @@ enum SelectionDocumentBuilder {
             let sectionStart = attributedString.length
             attributedString.append(layout.attributedString)
             let sectionRange = sectionStart..<attributedString.length
+            let sectionSourceStart = sourceString.length
+            sourceString.append(layout.source)
 
             if !layout.attributedString.string.isEmpty {
                 sections.append(.init(
                     range: sectionRange,
                     frame: layout.frame,
                     linePrefix: layout.linePrefix,
-                    key: layout.identity
+                    key: layout.identity,
+                    sourcePrefix: layout.sourcePrefix,
+                    sourceSuffix: layout.sourceSuffix
                 ))
             }
 
@@ -131,7 +151,9 @@ enum SelectionDocumentBuilder {
                             lineIndex: lines.count,
                             layoutDirection: slice.layoutDirection,
                             link: slice.link,
-                            rich: slice.rich
+                            rich: slice.rich,
+                            sourceRange: (slice.sourceRange ?? slice.characterRange)
+                                .offsetBySelection(by: sectionSourceStart)
                         )
                     )
                 }
@@ -151,7 +173,8 @@ enum SelectionDocumentBuilder {
             attributedString: attributedString,
             sections: sections,
             lines: lines,
-            slices: slices
+            slices: slices,
+            sourceString: sourceString
         )
     }
 
@@ -185,6 +208,13 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
     /// Assigned in `makeSnapshots` once display order is known.
     var identity: SelectionSnapshotIdentity?
     let attributedString: NSAttributedString
+    /// Parallel markdown-source string — slices carry `sourceRange`
+    /// into it. Equals `attributedString` when source == rendered.
+    let source: NSAttributedString
+    /// Source wrappers inherited from the anchor (code fences) — set
+    /// on the anchor's first/last snapshot in display order.
+    var sourcePrefix: String? = nil
+    var sourceSuffix: String? = nil
     let frame: CGRect
     let lines: [SelectionLineSnapshot]
     let linePrefix: String?
@@ -199,6 +229,7 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
         }
 
         self.attributedString = NSAttributedString(string: text)
+        self.source = self.attributedString
         self.frame = anchor.rect
         self.linePrefix = anchor.linePrefix
         guard
@@ -233,12 +264,14 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
             if let mapped = Self.makeMappedLines(from: base, mappings: mappings, origin: origin) {
                 self.lines = mapped.lines
                 self.attributedString = mapped.attributedString
+                self.source = mapped.source
             } else {
                 guard let reflected = Self.makeReflectedLines(from: base, origin: origin) else {
                     return nil
                 }
                 self.lines = reflected.lines
                 self.attributedString = reflected.attributedString
+                self.source = reflected.attributedString
             }
         } else {
             guard let reflected = Self.makeReflectedLines(from: base, origin: origin) else {
@@ -246,6 +279,7 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
             }
             self.lines = reflected.lines
             self.attributedString = reflected.attributedString
+            self.source = reflected.attributedString
         }
 
         guard self.attributedString.length > 0 else {
@@ -285,7 +319,7 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
         from base: SwiftUI.Text.Layout,
         mappings: [GlobalSelectionCache.CharacterMapping],
         origin: CGPoint
-    ) -> (lines: [SelectionLineSnapshot], attributedString: NSAttributedString)? {
+    ) -> (lines: [SelectionLineSnapshot], attributedString: NSAttributedString, source: NSAttributedString)? {
         // Preflight: every glyph positionally consumes one mapping,
         // including `Text(Image)` slices, which legitimately carry no
         // attributes of their own. `\n` mappings own no slice — they
@@ -302,6 +336,7 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
         }
 
         let attributedString = NSMutableAttributedString()
+        let sourceString = NSMutableAttributedString()
         var lines: [SelectionLineSnapshot] = []
         var pendingGroup: String? = nil
         var pendingSlice: SelectionSliceSnapshot? = nil
@@ -317,6 +352,8 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
                 while let lineBreak = cursor.nextLineBreak() {
                     let start = attributedString.length
                     attributedString.append(NSAttributedString(string: String(lineBreak.char)))
+                    let sourceStart = sourceString.length
+                    sourceString.append(NSAttributedString(string: String(lineBreak.char)))
                     lineSlices.append(
                         SelectionSliceSnapshot(
                             rect: CGRect(
@@ -324,7 +361,8 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
                                 width: 0, height: lineRect.height
                             ),
                             characterRange: start..<attributedString.length,
-                            layoutDirection: .leftToRight
+                            layoutDirection: .leftToRight,
+                            sourceRange: sourceStart..<sourceString.length
                         )
                     )
                 }
@@ -346,6 +384,7 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
                                 rect: merged.rect.union(rect),
                                 characterRange: merged.characterRange,
                                 layoutDirection: merged.layoutDirection,
+                                sourceRange: merged.sourceRange,
                                 link: merged.link,
                                 rich: merged.rich
                             )
@@ -361,21 +400,20 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
                         if !mapping.char.isEmpty {
                             attributedString.append(NSAttributedString(string: String(mapping.char)))
                         }
-                        let rich: SelectionRichContent? = mapping.richImage
-                            .flatMap { $0.resolve() }
-                            .map {
-                                .codeRef(
-                                    icon: $0.image,
-                                    label: mapping.richText ?? "",
-                                    link: mapping.link
-                                )
-                            }
+                        let sourceStart = sourceString.length
+                        if let source = mapping.source, !source.isEmpty {
+                            sourceString.append(NSAttributedString(string: String(source)))
+                        } else if !mapping.char.isEmpty {
+                            sourceString.append(NSAttributedString(string: String(mapping.char)))
+                        }
+                        // Grouped slices (code references) copy their
+                        // raw source — rich never replaces it.
                         pendingSlice = SelectionSliceSnapshot(
                             rect: rect,
                             characterRange: start..<attributedString.length,
                             layoutDirection: run.layoutDirection,
-                            link: mapping.link,
-                            rich: rich
+                            sourceRange: sourceStart..<sourceString.length,
+                            link: mapping.link
                         )
                         continue
                     }
@@ -391,11 +429,16 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
 
                     let start = attributedString.length
                     attributedString.append(NSAttributedString(string: String(mapping.char)))
+                    let sourceStart = sourceString.length
+                    sourceString.append(
+                        NSAttributedString(string: String(mapping.source ?? mapping.char))
+                    )
                     lineSlices.append(
                         SelectionSliceSnapshot(
                             rect: rect,
                             characterRange: start..<attributedString.length,
                             layoutDirection: run.layoutDirection,
+                            sourceRange: sourceStart..<sourceString.length,
                             link: mapping.link,
                             rich: mapping.richImage
                                 .flatMap { $0.resolve() }
@@ -415,7 +458,7 @@ struct SelectionLayoutSnapshot: @unchecked Sendable {
             lines.append(SelectionLineSnapshot(rect: lineRect, slices: lineSlices))
         }
 
-        return (lines, attributedString)
+        return (lines, attributedString, sourceString)
     }
 
     // MARK: Reflection extraction (guarded)
@@ -592,10 +635,12 @@ struct SelectionSliceSnapshot: @unchecked Sendable {
     let rect: CGRect
     let characterRange: Range<Int>
     let layoutDirection: LayoutDirection
+    /// This slice's span inside the snapshot's `source` string — equal
+    /// to `characterRange` when copy source and rendered text coincide.
+    var sourceRange: Range<Int>? = nil
     /// Resolved absolute link destination on this glyph/slice.
     var link: String? = nil
-    /// Rich-copy content (inline formula/icon image, merged code
-    /// reference, atomic block image).
+    /// Rich-copy content (inline formula image, atomic block image).
     var rich: SelectionRichContent? = nil
 }
 

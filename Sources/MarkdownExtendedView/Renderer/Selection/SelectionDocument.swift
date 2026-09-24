@@ -24,6 +24,11 @@ struct SelectionSection: @unchecked Sendable {
     /// position survive document rebuilds by translating its offset
     /// into the rebuilt range for the same snapshot.
     var key: SelectionSnapshotIdentity? = nil
+    /// Markdown-source wrappers emitted when the selection covers this
+    /// section's start/end (code-block fences on the anchor's first
+    /// and last section).
+    var sourcePrefix: String? = nil
+    var sourceSuffix: String? = nil
 }
 
 struct SelectionLine: @unchecked Sendable {
@@ -41,6 +46,9 @@ struct SelectionSlice: @unchecked Sendable {
     var link: String? = nil
     /// Rich ("with image") copy content for this slice.
     var rich: SelectionRichContent? = nil
+    /// This slice's span inside `sourceString` — nil means the copy
+    /// source equals the rendered text (`range` applies verbatim).
+    var sourceRange: Range<Int>? = nil
 }
 
 struct SelectionDocument: @unchecked Sendable {
@@ -57,17 +65,22 @@ struct SelectionDocument: @unchecked Sendable {
     let lines: [SelectionLine]
     let slices: [SelectionSlice]
     let hitRects: [CGRect]
+    /// Parallel markdown-source string — slice `sourceRange`s index
+    /// into it. nil means source == rendered (`attributedString`).
+    let sourceString: NSAttributedString?
 
     init(
         attributedString: NSAttributedString,
         sections: [SelectionSection],
         lines: [SelectionLine],
-        slices: [SelectionSlice]
+        slices: [SelectionSlice],
+        sourceString: NSAttributedString? = nil
     ) {
         self.attributedString = attributedString
         self.sections = sections
         self.lines = lines
         self.slices = slices
+        self.sourceString = sourceString
         self.hitRects = lines.compactMap { line in
             guard line.rect.width > 0, line.rect.height > 0 else {
                 return nil
@@ -133,12 +146,17 @@ struct SelectionDocument: @unchecked Sendable {
         )
     }
 
+    /// The Markdown-source text of the selection: per-glyph `source`
+    /// payloads (emphasis/link markers, fences, `> ` prefixes) assembled
+    /// slice by slice so boundary markers appear exactly when their
+    /// glyphs are selected.
     func plainText(in range: SelectionRange) -> String {
         let characterRange = selectedCharacterRange(for: range)
         guard characterRange.lowerBound < characterRange.upperBound else {
             return ""
         }
 
+        let source = sourceString ?? attributedString
         var text = ""
         var previousSection: SelectionSection?
 
@@ -149,11 +167,54 @@ struct SelectionDocument: @unchecked Sendable {
                 continue
             }
 
-            let substring = attributedString.attributedSubstring(
-                from: NSRange(lowerBound..<upperBound)
-            ).string
+            var substring = ""
+            for slice in slices
+            where slice.range.lowerBound < upperBound
+                && slice.range.upperBound > lowerBound
+            {
+                let covered = max(slice.range.lowerBound, lowerBound)..<min(
+                    slice.range.upperBound, upperBound
+                )
+                // A slice's source span is parallel to its rendered
+                // span: full coverage takes the whole payload (a single
+                // glyph's source can be multi-character — `**b`), a
+                // partial edge clips by rendered offset.
+                guard let sourceRange = slice.sourceRange else {
+                    substring += attributedString.attributedSubstring(
+                        from: NSRange(covered)
+                    ).string
+                    continue
+                }
+                if covered == slice.range {
+                    substring += source.attributedSubstring(
+                        from: NSRange(sourceRange)
+                    ).string
+                    continue
+                }
+                let offset = covered.lowerBound - slice.range.lowerBound
+                let srcLower = sourceRange.lowerBound + offset
+                let srcUpper = min(
+                    srcLower + covered.count,
+                    sourceRange.upperBound
+                )
+                guard srcLower < srcUpper, srcUpper <= source.length else {
+                    continue
+                }
+                substring += source.attributedSubstring(
+                    from: NSRange(srcLower..<srcUpper)
+                ).string
+            }
             guard !substring.isEmpty else {
                 continue
+            }
+
+            // Anchor-level source wrappers (code fences) attach only
+            // when the selection reaches the section's boundary.
+            if lowerBound == section.range.lowerBound, let prefix = section.sourcePrefix {
+                substring = prefix + substring
+            }
+            if upperBound == section.range.upperBound, let suffix = section.sourceSuffix {
+                substring += suffix
             }
 
             if
@@ -194,15 +255,6 @@ struct SelectionDocument: @unchecked Sendable {
             }
         }
         return result
-    }
-
-    func attributedText(in range: SelectionRange) -> NSAttributedString {
-        let characterRange = selectedCharacterRange(for: range)
-        guard characterRange.lowerBound < characterRange.upperBound else {
-            return NSAttributedString()
-        }
-
-        return attributedString.attributedSubstring(from: NSRange(characterRange))
     }
 
     /// Resolved link destination whose glyph rect contains `point` —
@@ -311,15 +363,6 @@ struct SelectionDocument: @unchecked Sendable {
         switch rich {
         case .image(let image):
             result.append(NSAttributedString(attachment: Self.imageAttachment(image)))
-        case .codeRef(let icon, let label, let link):
-            result.append(NSAttributedString(attachment: Self.imageAttachment(icon)))
-            let labelRun = NSMutableAttributedString(string: label)
-            let fullRange = NSRange(location: 0, length: labelRun.length)
-            labelRun.addAttribute(.foregroundColor, value: MTColor.systemBlue, range: fullRange)
-            if let link, let url = URL(string: link) {
-                labelRun.addAttribute(.link, value: url, range: fullRange)
-            }
-            result.append(labelRun)
         }
     }
 

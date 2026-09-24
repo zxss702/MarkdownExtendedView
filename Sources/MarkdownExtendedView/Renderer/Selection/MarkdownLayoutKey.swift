@@ -26,6 +26,12 @@ public struct MarkdownLayout: @unchecked Sendable {
     /// so a lazy stack remeasuring mid-scroll can never mis-assign a
     /// text to a neighbouring row.
     public let textLayouts: SwiftUI.Text.LayoutKey.Value
+    /// Markdown-source wrapper emitted around this anchor's copied
+    /// sections (e.g. code-block fences): `sourcePrefix` attaches to
+    /// the first section, `sourceSuffix` to the last — each only when
+    /// the selection covers that boundary.
+    public let sourcePrefix: String?
+    public let sourceSuffix: String?
 
     public init(
         blockId: UUID,
@@ -35,7 +41,9 @@ public struct MarkdownLayout: @unchecked Sendable {
         linePrefix: String? = nil,
         richImage: MTImage? = nil,
         selectionID: String? = nil,
-        textLayouts: SwiftUI.Text.LayoutKey.Value = []
+        textLayouts: SwiftUI.Text.LayoutKey.Value = [],
+        sourcePrefix: String? = nil,
+        sourceSuffix: String? = nil
     ) {
         self.blockId = blockId
         self.bounds = bounds
@@ -45,6 +53,8 @@ public struct MarkdownLayout: @unchecked Sendable {
         self.richImage = richImage
         self.selectionID = selectionID
         self.textLayouts = textLayouts
+        self.sourcePrefix = sourcePrefix
+        self.sourceSuffix = sourceSuffix
     }
 }
 
@@ -58,6 +68,8 @@ extension MarkdownLayout: Equatable {
             && lhs.richImage.map(ObjectIdentifier.init) == rhs.richImage.map(ObjectIdentifier.init)
             && lhs.selectionID == rhs.selectionID
             && lhs.textLayouts == rhs.textLayouts
+            && lhs.sourcePrefix == rhs.sourcePrefix
+            && lhs.sourceSuffix == rhs.sourceSuffix
     }
 }
 
